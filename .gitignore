@@ -1,0 +1,16 @@
+# Node dependencies
+node_modules/
+
+# Compilation output
+dist/
+
+# Local configuration & environment variables
+.env
+.env*.local
+
+# System/IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log

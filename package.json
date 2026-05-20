@@ -1,0 +1,23 @@
+{
+  "name": "multidoro",
+  "version": "1.0.0",
+  "description": "Multidoro: A desktop Pomodoro tracking app powered by Google Gemini Live API.",
+  "main": "dist/main.js",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.js",
+    "watch": "tsc -w",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@google/genai": "^1.1.0",
+    "dotenv": "^16.4.5",
+    "screenshot-desktop": "^1.15.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.12",
+    "electron": "^30.0.6",
+    "tsx": "^4.10.5",
+    "typescript": "^5.4.5"
+  }
+}

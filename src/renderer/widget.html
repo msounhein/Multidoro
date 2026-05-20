@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Timer HUD</title>
+  <style>
+    :root {
+      --bg-focus: rgba(6, 182, 212, 0.4);
+      --bg-break: rgba(16, 185, 129, 0.4);
+      --bg-idle: rgba(139, 92, 246, 0.4);
+      --bg-distracted: rgba(239, 68, 68, 0.55);
+      
+      --glow-focus: 0 0 15px rgba(6, 182, 212, 0.4);
+      --glow-break: 0 0 15px rgba(16, 185, 129, 0.4);
+      --glow-idle: 0 0 15px rgba(139, 92, 246, 0.4);
+      --glow-distracted: 0 0 20px rgba(239, 68, 68, 0.6);
+      
+      --accent: var(--bg-idle);
+      --glow: var(--glow-idle);
+    }
+    
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: transparent;
+      color: white;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      user-select: none;
+    }
+    
+    .hud-container {
+      width: 140px;
+      height: 50px;
+      background: rgba(10, 15, 30, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 25px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      position: relative;
+      /* Makes the whole HUD draggable by default */
+      -webkit-app-region: drag;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5), var(--glow);
+      transition: all 0.3s ease;
+    }
+    
+    .hud-container.focus {
+      border-color: rgba(6, 182, 212, 0.4);
+      --glow: var(--glow-focus);
+    }
+    
+    .hud-container.break {
+      border-color: rgba(16, 185, 129, 0.4);
+      --glow: var(--glow-break);
+    }
+
+    .hud-container.distracted {
+      border-color: rgba(239, 68, 68, 0.5);
+      --glow: var(--glow-distracted);
+      animation: flashRed 1s infinite alternate;
+    }
+
+    @keyframes flashRed {
+      0% { box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 5px rgba(239, 68, 68, 0.3); }
+      100% { box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 25px rgba(239, 68, 68, 0.8); }
+    }
+    
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #8b5cf6;
+      margin-right: 8px;
+      flex-shrink: 0;
+      transition: background 0.3s ease;
+    }
+    
+    .status-indicator.focus { background: #06b6d4; }
+    .status-indicator.break { background: #10b981; }
+    .status-indicator.distracted { background: #ef4444; }
+    
+    .timer-text {
+      font-size: 1.15rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      flex-grow: 1;
+      letter-spacing: -0.5px;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+    
+    /* Hover Controls (non-draggable to allow clicking) */
+    .controls {
+      display: flex;
+      gap: 6px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      -webkit-app-region: no-drag;
+    }
+    
+    .hud-container:hover .controls {
+      opacity: 1;
+    }
+    
+    .btn-hud {
+      background: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      font-size: 0.65rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: background 0.2s;
+    }
+    
+    .btn-hud:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+  </style>
+</head>
+<body>
+  <div class="hud-container" id="hud">
+    <div class="status-indicator" id="indicator"></div>
+    <div class="timer-text" id="time">00:00</div>
+    <div class="controls">
+      <button class="btn-hud" id="btn-play-pause" title="Pause/Play">⏸</button>
+    </div>
+  </div>
+
+  <script>
+    const hud = document.getElementById('hud');
+    const indicator = document.getElementById('indicator');
+    const timeDisplay = document.getElementById('time');
+    const playPauseBtn = document.getElementById('btn-play-pause');
+    
+    let isPaused = false;
+    
+    window.electronAPI.onTimerUpdate((state) => {
+      // Format time remaining
+      const m = Math.floor(state.remainingSeconds / 60).toString().padStart(2, '0');
+      const s = (state.remainingSeconds % 60).toString().padStart(2, '0');
+      timeDisplay.textContent = `${m}:${s}`;
+      
+      // Update theme classes
+      hud.className = 'hud-container';
+      indicator.className = 'status-indicator';
+      
+      if (state.phase === 'focus') {
+        hud.classList.add('focus');
+        indicator.classList.add('focus');
+      } else if (state.phase === 'break') {
+        hud.classList.add('break');
+        indicator.classList.add('break');
+      } else {
+        hud.classList.add('idle');
+        indicator.classList.add('idle');
+      }
+      
+      // Update play pause button
+      isPaused = state.isPaused;
+      playPauseBtn.textContent = isPaused ? '▶' : '⏸';
+      
+      // If paused, add visual cue
+      if (isPaused) {
+        timeDisplay.style.opacity = '0.5';
+      } else {
+        timeDisplay.style.opacity = '1';
+      }
+    });
+
+    window.electronAPI.onGeminiComment((comment) => {
+      if (comment.isDistraction) {
+        hud.classList.add('distracted');
+        indicator.classList.add('distracted');
+      }
+    });
+
+    playPauseBtn.addEventListener('click', () => {
+      if (isPaused) {
+        window.electronAPI.resumeTimer();
+      } else {
+        window.electronAPI.pauseTimer();
+      }
+    });
+  </script>
+</body>
+</html>
