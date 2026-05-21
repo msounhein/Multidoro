@@ -123,14 +123,20 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--color-focus) 0%, var(--color-idle) 100%);
-  color: white;
+  background: rgba(250, 204, 21, 0.1);
+  border: 1px solid rgba(250, 204, 21, 0.3);
   display: flex;
   justify-content: center;
   align-items: center;
-  font-weight: 800;
-  font-size: 1.2rem;
-  box-shadow: 0 4px 10px rgba(139, 92, 246, 0.3);
+  box-shadow: 0 4px 12px rgba(250, 204, 21, 0.2);
+  transition: all 0.3s ease;
+}
+
+.logo-icon:hover {
+  background: rgba(250, 204, 21, 0.25);
+  border-color: rgba(250, 204, 21, 0.5);
+  box-shadow: 0 4px 15px rgba(250, 204, 21, 0.4);
+  transform: translateY(-1px);
 }
 
 .logo-text {

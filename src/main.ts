@@ -50,8 +50,8 @@ let liveSession: any = null;
 let screenCaptureTimeout: NodeJS.Timeout | null = null;
 let continuousDistractedSeconds = 0;
 
-// Programmatically generated 16x16 pixel base64 PNG of a clock icon (prevents file loading crash)
-const TRAY_ICON_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAZUlEQVQ4y2NgGLTgPxSjC5CoGMRmYGBgYGBg+M8wipGBgYHhP7oCyQoYkNXgU8DIwMDwn4GB4T+DApIC/gP1MDCoMzAwaEDV4FPAyMDAwPCPgYHhP0MDsgI2jG5glGlgxGkDFAABdMhMdh/W5BgAAAABJRU5ErkJggg==';
+// Programmatically generated 16x16 pixel base64 PNG of a yellow banana icon
+const TRAY_ICON_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAASFJREFUOE9jZKAQMFKon2HUAIZhEwYFDgIK/NxM+TkZ3zaK8PCeYXR8/QU9fXy4JCfI9evb9u3rf9xTVPr7Ui/5eyFIDWOBg4AD43+m/SCOjfW/L37+LAdY+HhyGTUfPIAZ8v+8gsDvv1/Xnzrym//g3n+GnFz/f3z/xriievOnRJgB8yUl/h1IiPmRwM7N+paNi/0aEwvjN6b//3/+Y2AEJTadf//+nn5+73vYzZtMDOfOMkPN/p+IkhJfbuaoBwo0sLAwPeHg5/zJyPD/z38Ghp/fP//4/ffXP2Owrv8MiXPncRz49/evQ/XmzwswkvLz9RwKzCwM8xkYGBxQwoGR4QHjf4ZEUd8fB5DFceYFsEHMDA6MjAwP0DURZQCxuRQAgTlsUIbRIx0AAAAASUVORK5CYII=';
 
 // Initialize Settings & Database
 function initStorage() {
@@ -83,6 +83,7 @@ function saveSettings(settings: AppSettings) {
 
 // Window Creators
 function createMainWindow() {
+  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA);
   mainWindow = new BrowserWindow({
     width: 1080,
     height: 860,
@@ -90,6 +91,7 @@ function createMainWindow() {
     minHeight: 600,
     frame: true,
     show: true,
+    icon: icon,
     backgroundColor: '#0b0f19',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -136,6 +138,8 @@ function createWidgetWindow() {
   const x = displayX + screenWidth - widgetWidth - margin;
   const y = displayY + screenHeight - widgetHeight - margin;
 
+  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA);
+
   widgetWindow = new BrowserWindow({
     width: widgetWidth,
     height: widgetHeight,
@@ -147,6 +151,7 @@ function createWidgetWindow() {
     skipTaskbar: true,
     resizable: false,
     show: false,
+    icon: icon,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
