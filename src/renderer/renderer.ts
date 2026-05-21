@@ -38,6 +38,7 @@ function formatTokens(num: number): string {
   }
   if (num >= 1000) {
     const formatted = (num / 1000).toFixed(1);
+    if (formatted === '1000.0') return '1M';
     return (formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted) + 'K';
   }
   return num.toString();
@@ -526,9 +527,9 @@ async function loadAnalyticsData() {
     else if (s.status === 'interrupted') outcomeBadgeClass = 'badge-interrupted';
     
     let apiUsageHtml = `<span style="color: var(--text-muted);">N/A</span>`;
-    if (s.inputTokens !== undefined && s.outputTokens !== undefined) {
+    if (s.inputTokens != null && s.outputTokens != null) {
       const total = s.inputTokens + s.outputTokens;
-      const cost = s.estimatedCost !== undefined ? s.estimatedCost : 0;
+      const cost = s.estimatedCost != null ? s.estimatedCost : 0;
       apiUsageHtml = `
         <div class="api-usage-info">
           <div>In: ${formatTokens(s.inputTokens)} / Out: ${formatTokens(s.outputTokens)}</div>
