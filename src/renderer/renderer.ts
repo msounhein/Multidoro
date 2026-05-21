@@ -26,6 +26,21 @@ interface PomodoroSession {
   status: 'completed' | 'interrupted' | 'aborted';
   technique: string;
   distractionsCount?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCost?: number;
+}
+
+function formatTokens(num: number): string {
+  if (num >= 1000000) {
+    const formatted = (num / 1000000).toFixed(1);
+    return (formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted) + 'M';
+  }
+  if (num >= 1000) {
+    const formatted = (num / 1000).toFixed(1);
+    return (formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted) + 'K';
+  }
+  return num.toString();
 }
 
 // SVG Circular progress details
@@ -489,7 +504,7 @@ async function loadAnalyticsData() {
   logsTbody.innerHTML = '';
   
   if (data.sessions.length === 0) {
-    logsTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">No history logged yet.</td></tr>`;
+    logsTbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">No history logged yet.</td></tr>`;
     return;
   }
   
@@ -510,6 +525,19 @@ async function loadAnalyticsData() {
     if (s.status === 'completed') outcomeBadgeClass = 'badge-completed';
     else if (s.status === 'interrupted') outcomeBadgeClass = 'badge-interrupted';
     
+    let apiUsageHtml = `<span style="color: var(--text-muted);">N/A</span>`;
+    if (s.inputTokens !== undefined && s.outputTokens !== undefined) {
+      const total = s.inputTokens + s.outputTokens;
+      const cost = s.estimatedCost !== undefined ? s.estimatedCost : 0;
+      apiUsageHtml = `
+        <div class="api-usage-info">
+          <div>In: ${formatTokens(s.inputTokens)} / Out: ${formatTokens(s.outputTokens)}</div>
+          <div>Total: ${formatTokens(total)}</div>
+          <div class="api-cost">$${cost.toFixed(4)}</div>
+        </div>
+      `;
+    }
+
     tr.innerHTML = `
       <td>${formattedDate}</td>
       <td><strong>${s.taskName}</strong></td>
@@ -517,6 +545,7 @@ async function loadAnalyticsData() {
       <td style="text-transform: capitalize;">${s.technique}</td>
       <td><span class="badge ${outcomeBadgeClass}">${s.status}</span></td>
       <td>${s.distractionsCount || 0}</td>
+      <td>${apiUsageHtml}</td>
     `;
     
     logsTbody.appendChild(tr);
