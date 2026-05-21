@@ -11,6 +11,9 @@ export interface PomodoroSession {
   technique: string;
   status: 'completed' | 'interrupted' | 'aborted';
   distractionsCount: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  estimatedCost?: number;
 }
 
 export interface DistractionLog {
@@ -78,7 +81,12 @@ export class MultidoroDatabase {
     return newSession;
   }
 
-  public updateSessionStatus(id: string, status: PomodoroSession['status'], endTime?: string): PomodoroSession | null {
+  public updateSessionStatus(
+    id: string, 
+    status: PomodoroSession['status'], 
+    endTime?: string,
+    tokenData?: { inputTokens: number; outputTokens: number; estimatedCost: number }
+  ): PomodoroSession | null {
     const session = this.data.sessions.find(s => s.id === id);
     if (session) {
       session.status = status;
@@ -86,6 +94,11 @@ export class MultidoroDatabase {
         session.endTime = endTime;
       } else {
         session.endTime = new Date().toISOString();
+      }
+      if (tokenData) {
+        session.inputTokens = tokenData.inputTokens;
+        session.outputTokens = tokenData.outputTokens;
+        session.estimatedCost = tokenData.estimatedCost;
       }
       this.save();
       return session;
