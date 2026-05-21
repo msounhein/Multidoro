@@ -45,6 +45,10 @@ let activeTaskName = '';
 let activeTechnique = 'traditional';
 let activeSessionId = '';
 
+// Token accumulators
+let currentSessionInputTokens = 0;
+let currentSessionOutputTokens = 0;
+
 // Gemini Live Connection State
 let liveSession: any = null;
 let screenCaptureTimeout: NodeJS.Timeout | null = null;
@@ -308,6 +312,10 @@ When you receive a text message from the system starting with '[WARN]':
         onmessage: (message: any) => {
           if (appSettings.debugLogs) {
             console.log('[Gemini WS Inbound]', JSON.stringify(truncateLargeData(message), null, 2));
+          }
+          if (message.usageMetadata) {
+            currentSessionInputTokens = Math.max(currentSessionInputTokens, message.usageMetadata.promptTokenCount || 0);
+            currentSessionOutputTokens = Math.max(currentSessionOutputTokens, message.usageMetadata.responseTokenCount || 0);
           }
           handleGeminiMessage(message);
         },
@@ -682,9 +690,25 @@ function triggerStartFromTray() {
   }
 }
 
+function saveSessionTokenStats(status: 'completed' | 'interrupted' | 'aborted') {
+  if (activeSessionId) {
+    // Gemini 2.5/3.1 Flash baseline rates per 1,000,000 tokens:
+    // Input: $0.075, Output: $0.300
+    const estimatedCost = (currentSessionInputTokens / 1000000) * 0.075 + (currentSessionOutputTokens / 1000000) * 0.30;
+    db.updateSessionStatus(activeSessionId, status, undefined, {
+      inputTokens: currentSessionInputTokens,
+      outputTokens: currentSessionOutputTokens,
+      estimatedCost
+    });
+  }
+}
+
 function startTimer(taskName: string, technique: string, durationMinutes: number) {
   stopTimerInterval();
   disconnectGemini();
+
+  currentSessionInputTokens = 0;
+  currentSessionOutputTokens = 0;
 
   activeTaskName = taskName || 'Work Session';
   activeTechnique = technique;
@@ -737,7 +761,7 @@ function resetTimer() {
 
   // If focus session was active, record it as aborted
   if (activeSessionId && timerPhase === 'focus') {
-    db.updateSessionStatus(activeSessionId, 'aborted');
+    saveSessionTokenStats('aborted');
   }
 
   timerPhase = 'idle';
@@ -763,7 +787,7 @@ function handleTimerComplete() {
 
   // Update DB session
   if (activeSessionId) {
-    db.updateSessionStatus(activeSessionId, 'completed');
+    saveSessionTokenStats('completed');
   }
 
   // Notify user
