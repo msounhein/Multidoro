@@ -48,4 +48,12 @@ assert.strictEqual(persistedSession.inputTokens, 1500000);
 assert.strictEqual(persistedSession.outputTokens, 45000);
 assert.strictEqual(persistedSession.estimatedCost, 0.126);
 
+// Verify invalid session ID update returns null
+const invalidUpdate = db.updateSessionStatus('invalid-id', 'completed');
+assert.strictEqual(invalidUpdate, null, 'Updating a non-existent session should return null');
+
 console.log('Database test passed!');
+
+// Cleanup test data directory
+fs.rmSync(testDir, { recursive: true, force: true });
+
