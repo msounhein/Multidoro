@@ -81,9 +81,21 @@ function saveSettings(settings: AppSettings) {
   }
 }
 
+// Icon Loader Helper
+function getAppIcon(size?: { width: number, height: number }) {
+  const iconPath = path.join(__dirname, 'renderer', 'assets', 'icon.png');
+  if (fs.existsSync(iconPath)) {
+    let img = nativeImage.createFromPath(iconPath);
+    if (size) {
+      img = img.resize(size);
+    }
+    return img;
+  }
+  return nativeImage.createFromDataURL(TRAY_ICON_DATA);
+}
+
 // Window Creators
 function createMainWindow() {
-  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA);
   mainWindow = new BrowserWindow({
     width: 1080,
     height: 860,
@@ -91,7 +103,7 @@ function createMainWindow() {
     minHeight: 600,
     frame: true,
     show: true,
-    icon: icon,
+    icon: getAppIcon(),
     backgroundColor: '#0b0f19',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -138,8 +150,6 @@ function createWidgetWindow() {
   const x = displayX + screenWidth - widgetWidth - margin;
   const y = displayY + screenHeight - widgetHeight - margin;
 
-  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA);
-
   widgetWindow = new BrowserWindow({
     width: widgetWidth,
     height: widgetHeight,
@@ -151,7 +161,7 @@ function createWidgetWindow() {
     skipTaskbar: true,
     resizable: false,
     show: false,
-    icon: icon,
+    icon: getAppIcon({ width: 32, height: 32 }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -169,7 +179,7 @@ function createWidgetWindow() {
 
 // System Tray Setup
 function setupSystemTray() {
-  const icon = nativeImage.createFromDataURL(TRAY_ICON_DATA);
+  const icon = getAppIcon({ width: 16, height: 16 });
   tray = new Tray(icon);
   
   const contextMenu = Menu.buildFromTemplate([
