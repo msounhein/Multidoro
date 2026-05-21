@@ -83,9 +83,17 @@ function saveSettings(settings: AppSettings) {
 
 // Icon Loader Helper
 function getAppIcon(size?: { width: number, height: number }) {
-  const iconPath = path.join(__dirname, 'renderer', 'assets', 'icon.png');
-  if (fs.existsSync(iconPath)) {
-    let img = nativeImage.createFromPath(iconPath);
+  const icoPath = path.join(__dirname, 'renderer', 'assets', 'icon.ico');
+  const pngPath = path.join(__dirname, 'renderer', 'assets', 'icon.png');
+  
+  if (fs.existsSync(icoPath)) {
+    let img = nativeImage.createFromPath(icoPath);
+    if (size) {
+      img = img.resize(size);
+    }
+    return img;
+  } else if (fs.existsSync(pngPath)) {
+    let img = nativeImage.createFromPath(pngPath);
     if (size) {
       img = img.resize(size);
     }
