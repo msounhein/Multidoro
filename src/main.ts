@@ -25,6 +25,7 @@ interface AppSettings {
   voiceEnabled: boolean;
   voiceVolume: number;
   debugLogs: boolean;
+  consecutiveDistractionsLimit: number;
 }
 
 let appSettings: AppSettings = {
@@ -32,7 +33,8 @@ let appSettings: AppSettings = {
   screenshotInterval: 5,
   voiceEnabled: true,
   voiceVolume: 0.8,
-  debugLogs: false
+  debugLogs: false,
+  consecutiveDistractionsLimit: 1
 };
 
 // Timer State
