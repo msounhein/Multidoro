@@ -1,7 +1,6 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, screen, desktopCapturer } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import screenshot from 'screenshot-desktop';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { MultidoroDatabase, PomodoroSession } from './database';
 
@@ -594,6 +593,39 @@ function processStatusUpdate(status: string, description: string) {
   }
 }
 
+/**
+ * Captures the specified display as a JPEG buffer using Electron's native desktopCapturer API.
+ * If targetDisplayId is not specified or not found, it falls back to the primary display.
+ */
+async function captureScreen(targetDisplayId?: string): Promise<Buffer> {
+  const sources = await desktopCapturer.getSources({
+    types: ['screen'],
+    thumbnailSize: { width: 1920, height: 1080 }
+  });
+
+  if (sources.length === 0) {
+    throw new Error('No screen sources found by desktopCapturer');
+  }
+
+  let matchedSource = null;
+  if (targetDisplayId) {
+    matchedSource = sources.find(s => String(s.display_id) === String(targetDisplayId));
+  }
+
+  // Fallback to primary if target not found or not specified
+  if (!matchedSource) {
+    const primaryDisplay = screen.getPrimaryDisplay();
+    matchedSource = sources.find(s => String(s.display_id) === String(primaryDisplay.id));
+  }
+
+  // Fallback to first source as absolute fallback
+  if (!matchedSource) {
+    matchedSource = sources[0];
+  }
+
+  return matchedSource.thumbnail.toJPEG(80);
+}
+
 // Screenshot Capture loop
 async function runScreenshotCheck() {
   if (!liveSession || timerPhase !== 'focus' || isPaused) {
@@ -605,106 +637,35 @@ async function runScreenshotCheck() {
   try {
     console.log('[Screenshot Check] Capturing screenshot...');
     
-    let screenId: any = undefined;
+    let targetDisplayId: string | undefined = undefined;
     try {
-      interface ScreenshotDisplay {
-        id: string | number;
-        name: string;
-        left?: number;
-        top?: number;
-        offsetX?: number;
-        offsetY?: number;
-        width: number;
-        height: number;
-      }
-      
       const captureMode = appSettings.screenCaptureMode || 'primary';
       
       if (captureMode === 'cursor') {
-        const displays = await screenshot.listDisplays() as ScreenshotDisplay[];
-        if (displays && displays.length > 1) {
-          const cursorPoint = screen.getCursorScreenPoint();
-          const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
-
-          const isWin = process.platform === 'win32';
-          const isLinux = process.platform === 'linux';
-
-          if (isWin || isLinux) {
-            const physicalRect = screen.dipToScreenRect(null, activeDisplay.bounds);
-            const activeCenterX = physicalRect.x + physicalRect.width / 2;
-            const activeCenterY = physicalRect.y + physicalRect.height / 2;
-
-            let bestMatch: ScreenshotDisplay | null = null;
-            let minDistance = Infinity;
-
-            for (const d of displays) {
-              const dLeft = isWin ? d.left : d.offsetX;
-              const dTop = isWin ? d.top : d.offsetY;
-              const dWidth = d.width;
-              const dHeight = d.height;
-
-              if (dLeft !== undefined && dTop !== undefined) {
-                const dCenterX = dLeft + dWidth / 2;
-                const dCenterY = dTop + dHeight / 2;
-                const dist = Math.pow(dCenterX - activeCenterX, 2) + Math.pow(dCenterY - activeCenterY, 2);
-                if (dist < minDistance) {
-                  minDistance = dist;
-                  bestMatch = d;
-                }
-              }
-            }
-
-            if (bestMatch) {
-              screenId = bestMatch.id;
-              if (appSettings.debugLogs) {
-                console.log(`[Multi-Monitor] Cursor: x=${cursorPoint.x}, y=${cursorPoint.y} on Display ID: ${activeDisplay.id}`);
-                console.log(`[Multi-Monitor] Matched screen: ${bestMatch.id} (${bestMatch.name})`);
-              }
-            }
-          } else {
-            // macOS fallback: Match by index matching, sorting primary to head (index 0)
-            // because screenshot-desktop moves primary display to head on macOS.
-            const allDisplays = screen.getAllDisplays();
-            const primaryDisplay = screen.getPrimaryDisplay();
-            const sortedDisplays = [
-              primaryDisplay,
-              ...allDisplays.filter(d => d.id !== primaryDisplay.id)
-            ];
-            const activeIndex = sortedDisplays.findIndex(d => d.id === activeDisplay.id);
-            if (activeIndex !== -1 && activeIndex < displays.length) {
-              const bestMatch = displays[activeIndex];
-              screenId = bestMatch.id;
-              if (appSettings.debugLogs) {
-                console.log(`[Multi-Monitor] macOS Index Match: ${bestMatch.id} (${bestMatch.name})`);
-              }
-            } else {
-              console.warn(`[Multi-Monitor] macOS Index Match failed. activeIndex=${activeIndex}, displaysCount=${displays.length}`);
-            }
-          }
+        const cursorPoint = screen.getCursorScreenPoint();
+        const activeDisplay = screen.getDisplayNearestPoint(cursorPoint);
+        targetDisplayId = String(activeDisplay.id);
+        if (appSettings.debugLogs) {
+          console.log(`[Multi-Monitor] Cursor: x=${cursorPoint.x}, y=${cursorPoint.y} on Display ID: ${activeDisplay.id}`);
         }
       } else if (captureMode.startsWith('display:')) {
-        const targetIdStr = captureMode.substring('display:'.length);
-        const displays = await screenshot.listDisplays() as ScreenshotDisplay[];
-        const matched = displays.find(d => String(d.id) === targetIdStr);
-        if (matched) {
-          screenId = matched.id;
-          if (appSettings.debugLogs) {
-            console.log(`[Screen Capture] Specific display matched: ${screenId} (${matched.name})`);
-          }
-        } else {
-          console.warn(`[Screen Capture] Specific display with ID '${targetIdStr}' not found. Falling back to primary.`);
+        targetDisplayId = captureMode.substring('display:'.length);
+        if (appSettings.debugLogs) {
+          console.log(`[Screen Capture] Specific display targeted: ${targetDisplayId}`);
         }
       } else {
-        // 'primary' mode or fallback: leave screenId = undefined so screenshot-desktop defaults to primary display
+        // 'primary' mode or fallback: target the primary display ID
+        const primaryDisplay = screen.getPrimaryDisplay();
+        targetDisplayId = String(primaryDisplay.id);
         if (appSettings.debugLogs) {
-          console.log(`[Screen Capture] Mode is primary. Using default screen capture.`);
+          console.log(`[Screen Capture] Mode is primary. Targeting primary display: ${targetDisplayId}`);
         }
       }
     } catch (err) {
-      console.warn('[Screen Capture] Failed to list or resolve displays. Falling back to default capture:', err);
+      console.warn('[Screen Capture] Failed to resolve target display. Falling back to default:', err);
     }
 
-    const imgBuffer = await screenshot({ screen: screenId, format: 'jpeg' });
+    const imgBuffer = await captureScreen(targetDisplayId);
     const base64Data = imgBuffer.toString('base64');
 
     const payload = {
@@ -981,7 +942,13 @@ function setupIpcListeners() {
 
   ipcMain.handle('get-displays', async () => {
     try {
-      return await screenshot.listDisplays();
+      const displays = screen.getAllDisplays();
+      return displays.map((d, index) => ({
+        id: String(d.id),
+        name: `Display ${index + 1}`,
+        width: Math.round(d.bounds.width * d.scaleFactor),
+        height: Math.round(d.bounds.height * d.scaleFactor)
+      }));
     } catch (err) {
       console.error('[IPC] Failed to list displays:', err);
       return [];
