@@ -838,9 +838,13 @@ function resetTimer() {
   }
   consecutiveDistractionsCount = 0;
 
-  // If focus session was active, record it as aborted
-  if (activeSessionId && timerPhase === 'focus') {
-    saveSessionTokenStats('aborted');
+  // If focus session was active, record it as aborted; if break session, mark aborted
+  if (activeSessionId) {
+    if (timerPhase === 'focus') {
+      saveSessionTokenStats('aborted');
+    } else if (timerPhase === 'break') {
+      db.updateSessionStatus(activeSessionId, 'aborted');
+    }
   }
 
   timerPhase = 'idle';
@@ -866,7 +870,11 @@ function handleTimerComplete() {
 
   // Update DB session
   if (activeSessionId) {
-    saveSessionTokenStats('completed');
+    if (timerPhase === 'focus') {
+      saveSessionTokenStats('completed');
+    } else {
+      db.updateSessionStatus(activeSessionId, 'completed');
+    }
   }
 
   // Notify user
