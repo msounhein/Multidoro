@@ -1,13 +1,9 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import * as dotenv from 'dotenv';
 import screenshot from 'screenshot-desktop';
 import { GoogleGenAI, Modality, Type } from '@google/genai';
 import { MultidoroDatabase, PomodoroSession } from './database';
-
-// Load .env variables
-dotenv.config();
 
 // Windows references
 let mainWindow: BrowserWindow | null = null;
@@ -29,7 +25,7 @@ interface AppSettings {
 }
 
 let appSettings: AppSettings = {
-  apiKey: process.env.GEMINI_API_KEY || '',
+  apiKey: '',
   screenshotInterval: 5,
   voiceEnabled: true,
   voiceVolume: 0.8,
@@ -60,31 +56,18 @@ let consecutiveDistractionsCount = 0;
 const TRAY_ICON_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAASFJREFUOE9jZKAQMFKon2HUAIZhEwYFDgIK/NxM+TkZ3zaK8PCeYXR8/QU9fXy4JCfI9evb9u3rf9xTVPr7Ui/5eyFIDWOBg4AD43+m/SCOjfW/L37+LAdY+HhyGTUfPIAZ8v+8gsDvv1/Xnzrym//g3n+GnFz/f3z/xriievOnRJgB8yUl/h1IiPmRwM7N+paNi/0aEwvjN6b//3/+Y2AEJTadf//+nn5+73vYzZtMDOfOMkPN/p+IkhJfbuaoBwo0sLAwPeHg5/zJyPD/z38Ghp/fP//4/ffXP2Owrv8MiXPncRz49/evQ/XmzwswkvLz9RwKzCwM8xkYGBxQwoGR4QHjf4ZEUd8fB5DFceYFsEHMDA6MjAwP0DURZQCxuRQAgTlsUIbRIx0AAAAASUVORK5CYII=';
 
 // Initialize Settings & Database
-function initStorage() {
+async function initStorage() {
   const userDataPath = app.getPath('userData');
   db = new MultidoroDatabase(userDataPath);
+  await db.initializedPromise;
   
-  // Load settings.json if exists
-  const settingsPath = path.join(userDataPath, 'settings.json');
-  if (fs.existsSync(settingsPath)) {
-    try {
-      const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
-      appSettings = { ...appSettings, ...saved };
-    } catch (e) {
-      console.error('Failed to load settings.json:', e);
-    }
-  }
+  // Load setting state from database settings table
+  appSettings = db.getAppSettings();
 }
 
 function saveSettings(settings: AppSettings) {
   appSettings = { ...appSettings, ...settings };
-  const userDataPath = app.getPath('userData');
-  const settingsPath = path.join(userDataPath, 'settings.json');
-  try {
-    fs.writeFileSync(settingsPath, JSON.stringify(appSettings, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Failed to save settings.json:', e);
-  }
+  db.saveAppSettings(appSettings);
 }
 
 // Icon Loader Helper
@@ -1006,13 +989,13 @@ function setupIpcListeners() {
 }
 
 // App lifecycle
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Set App User Model ID for Windows Toast Notifications to work
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.multidoro.app');
   }
   
-  initStorage();
+  await initStorage();
   createMainWindow();
   setupSystemTray();
   setupIpcListeners();
