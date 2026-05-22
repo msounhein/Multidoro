@@ -27,3 +27,20 @@ if (fs.existsSync(srcDir)) {
 } else {
   console.error('Source directory does not exist:', srcDir);
 }
+
+// Copy node_modules/sql.js/dist/sql-wasm.wasm to dist/sql-wasm.wasm
+const wasmSrc = path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', 'sql-wasm.wasm');
+const wasmDest = path.join(__dirname, '..', 'dist', 'sql-wasm.wasm');
+
+if (fs.existsSync(wasmSrc)) {
+  // Ensure dist directory exists
+  const distDir = path.dirname(wasmDest);
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true });
+  }
+  fs.copyFileSync(wasmSrc, wasmDest);
+  console.log('Successfully copied sql-wasm.wasm to dist/');
+} else {
+  console.error('Warning: sql-wasm.wasm not found in node_modules/sql.js/dist/');
+}
+
