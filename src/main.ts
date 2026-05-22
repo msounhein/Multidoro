@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, Notification, screen, desktopCapturer } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { GoogleGenAI, Modality, Type } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import { MultidoroDatabase, PomodoroSession } from './database';
 
 // Windows references
@@ -65,6 +65,7 @@ function getAIClient(): GoogleGenAI | null {
 
 let screenCaptureTimeout: NodeJS.Timeout | null = null;
 let consecutiveDistractionsCount = 0;
+let isClassifying = false;
 
 // Programmatically generated 16x16 pixel base64 PNG of a yellow banana icon
 const TRAY_ICON_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAASFJREFUOE9jZKAQMFKon2HUAIZhEwYFDgIK/NxM+TkZ3zaK8PCeYXR8/QU9fXy4JCfI9evb9u3rf9xTVPr7Ui/5eyFIDWOBg4AD43+m/SCOjfW/L37+LAdY+HhyGTUfPIAZ8v+8gsDvv1/Xnzrym//g3n+GnFz/f3z/xriievOnRJgB8yUl/h1IiPmRwM7N+paNi/0aEwvjN6b//3/+Y2AEJTadf//+nn5+73vYzZtMDOfOMkPN/p+IkhJfbuaoBwo0sLAwPeHg5/zJyPD/z38Ghp/fP//4/ffXP2Owrv8MiXPncRz49/evQ/XmzwswkvLz9RwKzCwM8xkYGBxQwoGR4QHjf4ZEUd8fB5DFceYFsEHMDA6MjAwP0DURZQCxuRQAgTlsUIbRIx0AAAAASUVORK5CYII=';
@@ -341,6 +342,11 @@ async function captureScreen(targetDisplayId?: string): Promise<Buffer> {
 
 // Stateless Screen Classification check
 async function runScreenClassification() {
+  if (isClassifying) {
+    console.log('[Screen Classification] Check already in progress. Skipping execution to prevent overlap.');
+    return;
+  }
+
   if (timerPhase !== 'focus' || isPaused) {
     console.log(`[Screen Classification] Skipping: phase=${timerPhase}, isPaused=${isPaused}`);
     scheduleNextScreenshotCheck();
@@ -351,10 +357,11 @@ async function runScreenClassification() {
   if (!ai) {
     console.warn('[Screen Classification] Skipping check: Gemini API key is missing.');
     broadcastComment('Gemini Coach: API key is missing. Add it in Settings.', false);
-    scheduleNextScreenshotCheck();
+    // Halt rescheduling when API key is missing.
     return;
   }
 
+  isClassifying = true;
   try {
     console.log('[Screen Classification] Capturing screenshot...');
     
@@ -456,6 +463,7 @@ Analyze the screenshot:
     console.error('[Screen Classification] Failed:', error);
     broadcastComment(`Gemini Coach: Check failed. ${(error as Error).message}`, false);
   } finally {
+    isClassifying = false;
     scheduleNextScreenshotCheck();
   }
 }
@@ -512,9 +520,10 @@ function triggerStartFromTray() {
 
 function saveSessionTokenStats(status: 'completed' | 'interrupted' | 'aborted') {
   if (activeSessionId) {
-    // Gemini 2.5/3.1 Flash baseline rates per 1,000,000 tokens:
-    // Input: $0.075, Output: $0.300
-    const estimatedCost = (currentSessionInputTokens / 1000000) * 0.075 + (currentSessionOutputTokens / 1000000) * 0.30;
+    const isPro = appSettings.geminiModel.includes('pro');
+    const inputRate = isPro ? 1.25 : 0.075;
+    const outputRate = isPro ? 5.00 : 0.30;
+    const estimatedCost = (currentSessionInputTokens / 1000000) * inputRate + (currentSessionOutputTokens / 1000000) * outputRate;
     db.updateSessionStatus(activeSessionId, status, undefined, {
       inputTokens: currentSessionInputTokens,
       outputTokens: currentSessionOutputTokens,
@@ -562,6 +571,16 @@ function startTimer(taskName: string, technique: string, durationMinutes: number
 function toggleTimerPause() {
   if (timerPhase === 'idle') return;
   isPaused = !isPaused;
+  if (isPaused) {
+    if (screenCaptureTimeout) {
+      clearTimeout(screenCaptureTimeout);
+      screenCaptureTimeout = null;
+    }
+  } else {
+    if (timerPhase === 'focus') {
+      scheduleNextScreenshotCheck(true);
+    }
+  }
   broadcastTimerUpdate();
   broadcastComment(isPaused ? 'Timer paused.' : 'Timer resumed.', false);
 }
@@ -726,10 +745,15 @@ function setupIpcListeners() {
   ipcMain.handle('save-settings', (_event, settings) => {
     saveSettings(settings);
     aiClient = null; // Invalidate cached instance
-    // If screenshot interval changed and session is active, restart timeout loop
-    if (screenCaptureTimeout && timerPhase === 'focus') {
-      clearTimeout(screenCaptureTimeout);
-      scheduleNextScreenshotCheck();
+    // If in focus and not paused, ensure the classification loop is running if the API key is present
+    if (timerPhase === 'focus' && !isPaused) {
+      if (screenCaptureTimeout) {
+        clearTimeout(screenCaptureTimeout);
+        screenCaptureTimeout = null;
+      }
+      if (appSettings.apiKey) {
+        scheduleNextScreenshotCheck(true);
+      }
     }
     return appSettings;
   });
