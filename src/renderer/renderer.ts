@@ -15,6 +15,7 @@ interface AppSettings {
   voiceVolume: number;
   debugLogs: boolean;
   consecutiveDistractionsLimit: number;
+  screenCaptureMode: string;
 }
 
 interface PomodoroSession {
@@ -414,6 +415,7 @@ const voiceEnabledChk = document.getElementById('setting-voice-enabled') as HTML
 const saveBtn = document.getElementById('btn-save-settings') as HTMLButtonElement;
 const settingsStatusMsg = document.getElementById('settings-status-msg') as HTMLSpanElement;
 const consecutiveDistractionsInput = document.getElementById('setting-consecutive-distractions') as HTMLInputElement;
+const captureModeSelect = document.getElementById('setting-capture-mode') as HTMLSelectElement;
 
 visibilityBtn.addEventListener('click', () => {
   apiInput.type = apiInput.type === 'password' ? 'text' : 'password';
@@ -447,6 +449,29 @@ async function loadSettingsData() {
   voiceEnabledChk.checked = settings.voiceEnabled !== false;
   consecutiveDistractionsInput.value = (settings.consecutiveDistractionsLimit || 1).toString();
   
+  // Populate screen capture modes dynamically
+  if (captureModeSelect) {
+    captureModeSelect.innerHTML = `
+      <option value="primary">Primary Display Only (Stable)</option>
+      <option value="cursor">Follow Mouse Cursor (Dynamic)</option>
+    `;
+    try {
+      const displays = await (window as any).electronAPI.getDisplays();
+      if (Array.isArray(displays)) {
+        displays.forEach((display, index) => {
+          const option = document.createElement('option');
+          option.value = `display:${display.id}`;
+          const resolution = `${display.width}x${display.height}`;
+          option.textContent = `Display ${index + 1} (${display.name || 'Unknown'} - ${resolution})`;
+          captureModeSelect.appendChild(option);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load displays:', e);
+    }
+    captureModeSelect.value = settings.screenCaptureMode || 'primary';
+  }
+  
   const volRange = document.getElementById('setting-voice-volume') as HTMLInputElement;
   if (volRange) volRange.value = (settings.voiceVolume ?? 0.8).toString();
 
@@ -466,7 +491,8 @@ saveBtn.addEventListener('click', async () => {
     voiceEnabled: voiceEnabledChk.checked,
     voiceVolume: volRange ? parseFloat(volRange.value) : 0.8,
     debugLogs: debugLogsChk ? debugLogsChk.checked : false,
-    consecutiveDistractionsLimit: parseInt(consecutiveDistractionsInput.value, 10) || 1
+    consecutiveDistractionsLimit: parseInt(consecutiveDistractionsInput.value, 10) || 1,
+    screenCaptureMode: captureModeSelect ? captureModeSelect.value : 'primary'
   };
   
   await (window as any).electronAPI.saveSettings(updatedSettings);

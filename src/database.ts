@@ -33,6 +33,7 @@ export interface AppSettings {
   voiceVolume: number;
   debugLogs: boolean;
   consecutiveDistractionsLimit: number;
+  screenCaptureMode: string;
 }
 
 export class MultidoroDatabase {
@@ -464,7 +465,8 @@ export class MultidoroDatabase {
       voiceEnabled: true,
       voiceVolume: 0.8,
       debugLogs: false,
-      consecutiveDistractionsLimit: 1
+      consecutiveDistractionsLimit: 1,
+      screenCaptureMode: 'primary'
     };
 
     const stmt = this.db!.prepare('SELECT key, value FROM settings');
@@ -496,6 +498,8 @@ export class MultidoroDatabase {
           settings.debugLogs = val === 'true';
         } else if (key === 'consecutiveDistractionsLimit') {
           settings.consecutiveDistractionsLimit = parseInt(val, 10) || 1;
+        } else if (key === 'screenCaptureMode') {
+          settings.screenCaptureMode = val || 'primary';
         }
       }
     } finally {
@@ -543,6 +547,10 @@ export class MultidoroDatabase {
 
       if (settings.consecutiveDistractionsLimit !== undefined && settings.consecutiveDistractionsLimit !== null) {
         stmt.run(['consecutiveDistractionsLimit', settings.consecutiveDistractionsLimit.toString()]);
+      }
+
+      if (settings.screenCaptureMode !== undefined && settings.screenCaptureMode !== null) {
+        stmt.run(['screenCaptureMode', settings.screenCaptureMode]);
       }
     } finally {
       stmt.free();

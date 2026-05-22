@@ -15,6 +15,7 @@ export interface AppSettings {
   voiceEnabled: boolean;
   voiceVolume: number;
   consecutiveDistractionsLimit: number;
+  screenCaptureMode: string;
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -30,6 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearHistory: () => ipcRenderer.invoke('clear-history'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings: AppSettings) => ipcRenderer.invoke('save-settings', settings),
+  getDisplays: () => ipcRenderer.invoke('get-displays'),
   
   // Widget Toggle
   toggleWidget: (visible: boolean) => ipcRenderer.send('toggle-widget', visible),
