@@ -57,8 +57,10 @@ export class MultidoroDatabase {
       if (fs.existsSync(this.dbPath)) {
         const fileBuffer = fs.readFileSync(this.dbPath);
         this.db = new SQL.Database(fileBuffer);
+        this.db.run('PRAGMA foreign_keys = ON;');
       } else {
         this.db = new SQL.Database();
+        this.db.run('PRAGMA foreign_keys = ON;');
         this.createTables();
         this.save();
       }
@@ -71,11 +73,13 @@ export class MultidoroDatabase {
       const initSqlJsFallback = require('sql.js');
       const SQL = await initSqlJsFallback();
       this.db = new SQL.Database();
+      this.db.run('PRAGMA foreign_keys = ON;');
       this.createTables();
     }
   }
 
   private createTables() {
+    this.db.run('PRAGMA foreign_keys = ON;');
     this.db.run(`
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
@@ -465,11 +469,11 @@ export class MultidoroDatabase {
     }
 
     stmt.run(['apiKey', encryptedKey]);
-    stmt.run(['screenshotInterval', settings.screenshotInterval.toString()]);
-    stmt.run(['voiceEnabled', settings.voiceEnabled ? 'true' : 'false']);
-    stmt.run(['voiceVolume', settings.voiceVolume.toString()]);
-    stmt.run(['debugLogs', settings.debugLogs ? 'true' : 'false']);
-    stmt.run(['consecutiveDistractionsLimit', settings.consecutiveDistractionsLimit.toString()]);
+    stmt.run(['screenshotInterval', (settings.screenshotInterval ?? 5).toString()]);
+    stmt.run(['voiceEnabled', (settings.voiceEnabled !== false) ? 'true' : 'false']);
+    stmt.run(['voiceVolume', (settings.voiceVolume ?? 0.8).toString()]);
+    stmt.run(['debugLogs', (settings.debugLogs ?? false) ? 'true' : 'false']);
+    stmt.run(['consecutiveDistractionsLimit', (settings.consecutiveDistractionsLimit ?? 1).toString()]);
     stmt.free();
     this.save();
   }
