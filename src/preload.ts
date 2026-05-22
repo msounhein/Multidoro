@@ -14,6 +14,7 @@ export interface AppSettings {
   screenshotInterval: number;
   voiceEnabled: boolean;
   voiceVolume: number;
+  debugLogs: boolean;
   consecutiveDistractionsLimit: number;
   screenCaptureMode: string;
   geminiModel: string;
