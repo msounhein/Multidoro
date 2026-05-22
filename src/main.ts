@@ -262,7 +262,7 @@ When you receive a screenshot (video frame):
 - DO NOT speak verbally (do not output audio) in response to the screenshot. You must ONLY call the tool.
 
 When you receive a text message from the system starting with '[WARN]':
-- You MUST speak a short verbal warning (output audio, under 10 words) telling the user to return to their task: "${activeTaskName}" (e.g., "Hey! Back to job searching!").
+- You MUST speak a short verbal warning (output audio, under 15 words) telling the user to return to their task: "${activeTaskName}", and explicitly state what they were caught doing (e.g., "Stop watching YouTube and get back to writing Python tests!").
 - DO NOT call any tool in response to '[WARN]'.`;
 
     const config = {
@@ -522,7 +522,7 @@ function handleGeminiMessage(message: any) {
             
             if (liveSession) {
               liveSession.sendRealtimeInput({
-                text: `[WARN] Speak a warning now!`
+                text: `[WARN] Speak a warning now! The user was caught doing: ${cleanText}`
               });
             }
           } else {
@@ -548,7 +548,7 @@ function handleGeminiMessage(message: any) {
               showToast("Multidoro Distraction Warning!", text);
               if (liveSession) {
                 liveSession.sendRealtimeInput({
-                  text: `[WARN] Speak a warning now!`
+                  text: `[WARN] Speak a warning now! The user was caught doing: ${text}`
                 });
               }
             } else {
@@ -585,12 +585,12 @@ function processStatusUpdate(status: string, description: string) {
       
       if (liveSession) {
         const payload = {
-          text: `[WARN] Speak a warning now!`
+          text: `[WARN] Speak a warning now! The user was caught doing: ${description}`
         };
         if (appSettings.debugLogs) {
           console.log('[Gemini WS Outbound - Warn]', JSON.stringify(payload, null, 2));
         } else {
-          console.log(`[Status Update] Sending [WARN] message to prompt vocal warning.`);
+          console.log(`[Status Update] Sending [WARN] message to prompt vocal warning: "${description}"`);
         }
         liveSession.sendRealtimeInput(payload);
       }
