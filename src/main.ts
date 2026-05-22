@@ -22,6 +22,8 @@ interface AppSettings {
   debugLogs: boolean;
   consecutiveDistractionsLimit: number;
   screenCaptureMode: string;
+  geminiModel: string;
+  voiceName: string;
 }
 
 let appSettings: AppSettings = {
@@ -31,7 +33,9 @@ let appSettings: AppSettings = {
   voiceVolume: 0.8,
   debugLogs: false,
   consecutiveDistractionsLimit: 1,
-  screenCaptureMode: 'primary'
+  screenCaptureMode: 'primary',
+  geminiModel: 'gemini-3.5-flash',
+  voiceName: 'Zephyr'
 };
 
 // Timer State

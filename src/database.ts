@@ -34,6 +34,8 @@ export interface AppSettings {
   debugLogs: boolean;
   consecutiveDistractionsLimit: number;
   screenCaptureMode: string;
+  geminiModel: string;
+  voiceName: string;
 }
 
 export class MultidoroDatabase {
@@ -466,7 +468,9 @@ export class MultidoroDatabase {
       voiceVolume: 0.8,
       debugLogs: false,
       consecutiveDistractionsLimit: 1,
-      screenCaptureMode: 'primary'
+      screenCaptureMode: 'primary',
+      geminiModel: 'gemini-3.5-flash',
+      voiceName: 'Zephyr'
     };
 
     const stmt = this.db!.prepare('SELECT key, value FROM settings');
@@ -500,6 +504,10 @@ export class MultidoroDatabase {
           settings.consecutiveDistractionsLimit = parseInt(val, 10) || 1;
         } else if (key === 'screenCaptureMode') {
           settings.screenCaptureMode = val || 'primary';
+        } else if (key === 'geminiModel') {
+          settings.geminiModel = val || 'gemini-3.5-flash';
+        } else if (key === 'voiceName') {
+          settings.voiceName = val || 'Zephyr';
         }
       }
     } finally {
@@ -551,6 +559,14 @@ export class MultidoroDatabase {
 
       if (settings.screenCaptureMode !== undefined && settings.screenCaptureMode !== null) {
         stmt.run(['screenCaptureMode', settings.screenCaptureMode]);
+      }
+
+      if (settings.geminiModel !== undefined && settings.geminiModel !== null) {
+        stmt.run(['geminiModel', settings.geminiModel]);
+      }
+
+      if (settings.voiceName !== undefined && settings.voiceName !== null) {
+        stmt.run(['voiceName', settings.voiceName]);
       }
     } finally {
       stmt.free();

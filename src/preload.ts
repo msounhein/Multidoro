@@ -16,6 +16,8 @@ export interface AppSettings {
   voiceVolume: number;
   consecutiveDistractionsLimit: number;
   screenCaptureMode: string;
+  geminiModel: string;
+  voiceName: string;
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {

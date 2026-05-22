@@ -16,6 +16,8 @@ interface AppSettings {
   debugLogs: boolean;
   consecutiveDistractionsLimit: number;
   screenCaptureMode: string;
+  geminiModel: string;
+  voiceName: string;
 }
 
 interface PomodoroSession {
@@ -442,8 +444,13 @@ if (linkToSettings) {
   });
 }
 
+let loadedGeminiModel = 'gemini-3.5-flash';
+let loadedVoiceName = 'Zephyr';
+
 async function loadSettingsData() {
   const settings: AppSettings = await (window as any).electronAPI.getSettings();
+  loadedGeminiModel = settings.geminiModel || 'gemini-3.5-flash';
+  loadedVoiceName = settings.voiceName || 'Zephyr';
   apiInput.value = settings.apiKey || '';
   intervalInput.value = (settings.screenshotInterval || 5).toString();
   voiceEnabledChk.checked = settings.voiceEnabled !== false;
@@ -492,7 +499,9 @@ saveBtn.addEventListener('click', async () => {
     voiceVolume: volRange ? parseFloat(volRange.value) : 0.8,
     debugLogs: debugLogsChk ? debugLogsChk.checked : false,
     consecutiveDistractionsLimit: parseInt(consecutiveDistractionsInput.value, 10) || 1,
-    screenCaptureMode: captureModeSelect ? captureModeSelect.value : 'primary'
+    screenCaptureMode: captureModeSelect ? captureModeSelect.value : 'primary',
+    geminiModel: loadedGeminiModel,
+    voiceName: loadedVoiceName
   };
   
   await (window as any).electronAPI.saveSettings(updatedSettings);
