@@ -257,8 +257,11 @@ async function connectGemini() {
 The user is currently in a FOCUS session working on the task: "${activeTaskName}".
 Your role is to strictly verify if their screen screenshots match their task.
 
+On initial connection, do not make any tool calls or speak until you receive the first screenshot frame.
+
 When you receive a screenshot (video frame):
-- You MUST call the 'report_distraction_status' tool to report the user's status.
+- If the screenshot is completely black, blank, or you cannot see any application windows/content, report the status as ON_TASK with the description "Screen blank or transitioning". Do not guess or hallucinate any activities.
+- Otherwise, you MUST call the 'report_distraction_status' tool to report the user's status.
 - DO NOT speak verbally (do not output audio) in response to the screenshot. You must ONLY call the tool.
 
 When you receive a text message from the system starting with '[WARN]':
@@ -348,7 +351,7 @@ When you receive a text message from the system starting with '[WARN]':
     liveSession = session;
     console.log('Gemini Live session variable assigned. Starting screenshot loop.');
     consecutiveDistractionsCount = 0;
-    scheduleNextScreenshotCheck();
+    scheduleNextScreenshotCheck(true);
   } catch (err) {
     console.error('Gemini connection failed:', err);
     broadcastComment(`Gemini Connection Error: ${(err as Error).message}`, false);
@@ -716,11 +719,11 @@ async function runScreenshotCheck() {
   }
 }
 
-function scheduleNextScreenshotCheck() {
+function scheduleNextScreenshotCheck(immediate: boolean = false) {
   if (screenCaptureTimeout) clearTimeout(screenCaptureTimeout);
   if (timerPhase === 'focus' && !isPaused && liveSession) {
-    const delay = appSettings.screenshotInterval * 1000;
-    console.log(`[Screenshot Check] Scheduling next capture in ${appSettings.screenshotInterval}s`);
+    const delay = immediate ? 500 : appSettings.screenshotInterval * 1000;
+    console.log(`[Screenshot Check] Scheduling next capture in ${immediate ? '0.5' : appSettings.screenshotInterval}s`);
     screenCaptureTimeout = setTimeout(runScreenshotCheck, delay);
   } else {
     console.log('[Screenshot Check] Loop stopped: phase is not focus, or is paused, or liveSession is inactive');
@@ -949,7 +952,7 @@ function setupIpcListeners() {
   ipcMain.on('resume-timer', () => {
     isPaused = false;
     broadcastTimerUpdate();
-    scheduleNextScreenshotCheck();
+    scheduleNextScreenshotCheck(true);
   });
   
   ipcMain.on('reset-timer', () => {
