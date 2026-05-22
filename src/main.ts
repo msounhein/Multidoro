@@ -54,7 +54,7 @@ let currentSessionOutputTokens = 0;
 // Gemini Live Connection State
 let liveSession: any = null;
 let screenCaptureTimeout: NodeJS.Timeout | null = null;
-let continuousDistractedSeconds = 0;
+let consecutiveDistractionsCount = 0;
 
 // Programmatically generated 16x16 pixel base64 PNG of a yellow banana icon
 const TRAY_ICON_DATA = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAASFJREFUOE9jZKAQMFKon2HUAIZhEwYFDgIK/NxM+TkZ3zaK8PCeYXR8/QU9fXy4JCfI9evb9u3rf9xTVPr7Ui/5eyFIDWOBg4AD43+m/SCOjfW/L37+LAdY+HhyGTUfPIAZ8v+8gsDvv1/Xnzrym//g3n+GnFz/f3z/xriievOnRJgB8yUl/h1IiPmRwM7N+paNi/0aEwvjN6b//3/+Y2AEJTadf//+nn5+73vYzZtMDOfOMkPN/p+IkhJfbuaoBwo0sLAwPeHg5/zJyPD/z38Ghp/fP//4/ffXP2Owrv8MiXPncRz49/evQ/XmzwswkvLz9RwKzCwM8xkYGBxQwoGR4QHjf4ZEUd8fB5DFceYFsEHMDA6MjAwP0DURZQCxuRQAgTlsUIbRIx0AAAAASUVORK5CYII=';
@@ -347,7 +347,7 @@ When you receive a text message from the system starting with '[WARN]':
 
     liveSession = session;
     console.log('Gemini Live session variable assigned. Starting screenshot loop.');
-    continuousDistractedSeconds = 0;
+    consecutiveDistractionsCount = 0;
     scheduleNextScreenshotCheck();
   } catch (err) {
     console.error('Gemini connection failed:', err);
@@ -505,26 +505,25 @@ function handleGeminiMessage(message: any) {
         }
         
         if (upperText.includes('STATUS: DISTRACTED')) {
-          continuousDistractedSeconds += appSettings.screenshotInterval;
+          consecutiveDistractionsCount++;
+          const durationSec = consecutiveDistractionsCount * appSettings.screenshotInterval;
           const cleanText = text.replace(/STATUS:\s*DISTRACTED\s*-?\s*/i, '');
-          const displayMsg = `[POTENTIAL DISTRACTION (${continuousDistractedSeconds}s)] ${cleanText}`;
-          console.log(`[Gemini Response] Fallback Classified: DISTRACTED. Accumulated duration: ${continuousDistractedSeconds}s`);
+          const displayMsg = `[POTENTIAL DISTRACTION (${durationSec}s)] ${cleanText}`;
+          console.log(`[Gemini Response] Fallback Classified: DISTRACTED. Consecutive count: ${consecutiveDistractionsCount}`);
           
-          if (continuousDistractedSeconds >= 30) {
+          if (consecutiveDistractionsCount >= appSettings.consecutiveDistractionsLimit) {
             broadcastComment(`[DISTRACTED] ${cleanText}`, true);
             
-            if (continuousDistractedSeconds === 30 || continuousDistractedSeconds % 30 === 0) {
-              console.log(`[Gemini Response] Threshold reached (>=30s). Triggering active scolding warning...`);
-              if (activeSessionId) {
-                db.addDistraction(activeSessionId, "Sustained distraction flagged by Gemini", cleanText);
-              }
-              showToast("Multidoro Distraction Warning!", cleanText);
-              
-              if (liveSession) {
-                liveSession.sendRealtimeInput({
-                  text: `[WARN] Speak a warning now!`
-                });
-              }
+            console.log(`[Gemini Response] Threshold reached. Triggering active scolding warning...`);
+            if (activeSessionId) {
+              db.addDistraction(activeSessionId, "Sustained distraction flagged by Gemini", cleanText);
+            }
+            showToast("Multidoro Distraction Warning!", cleanText);
+            
+            if (liveSession) {
+              liveSession.sendRealtimeInput({
+                text: `[WARN] Speak a warning now!`
+              });
             }
           } else {
             broadcastComment(displayMsg, false);
@@ -532,33 +531,32 @@ function handleGeminiMessage(message: any) {
           
         } else if (upperText.includes('STATUS: ON_TASK')) {
           console.log(`[Gemini Response] Fallback Classified: ON_TASK. Resetting continuous distraction count.`);
-          continuousDistractedSeconds = 0;
+          consecutiveDistractionsCount = 0;
           const cleanText = text.replace(/STATUS:\s*ON_TASK\s*-?\s*/i, '');
           broadcastComment(cleanText, false);
         } else {
           // General fallback
           if (upperText.includes('DISTRACTED') || upperText.includes('WARNING')) {
-            continuousDistractedSeconds += appSettings.screenshotInterval;
-            console.log(`[Gemini Response] Fallback Classified: DISTRACTED/WARNING. Accumulated duration: ${continuousDistractedSeconds}s`);
-            if (continuousDistractedSeconds >= 30) {
+            consecutiveDistractionsCount++;
+            const durationSec = consecutiveDistractionsCount * appSettings.screenshotInterval;
+            console.log(`[Gemini Response] Fallback Classified: DISTRACTED/WARNING. Consecutive count: ${consecutiveDistractionsCount}`);
+            if (consecutiveDistractionsCount >= appSettings.consecutiveDistractionsLimit) {
               broadcastComment(`[DISTRACTED] ${text}`, true);
-              if (continuousDistractedSeconds === 30 || continuousDistractedSeconds % 30 === 0) {
-                if (activeSessionId) {
-                  db.addDistraction(activeSessionId, "Distraction detected by Gemini", text);
-                }
-                showToast("Multidoro Distraction Warning!", text);
-                if (liveSession) {
-                  liveSession.sendRealtimeInput({
-                    text: `[WARN] Speak a warning now!`
-                  });
-                }
+              if (activeSessionId) {
+                db.addDistraction(activeSessionId, "Distraction detected by Gemini", text);
+              }
+              showToast("Multidoro Distraction Warning!", text);
+              if (liveSession) {
+                liveSession.sendRealtimeInput({
+                  text: `[WARN] Speak a warning now!`
+                });
               }
             } else {
-              broadcastComment(`[POTENTIAL DISTRACTION (${continuousDistractedSeconds}s)] ${text}`, false);
+              broadcastComment(`[POTENTIAL DISTRACTION (${durationSec}s)] ${text}`, false);
             }
           } else {
             console.log(`[Gemini Response] Fallback Classified: ON_TASK (default). Resetting continuous distraction count.`);
-            continuousDistractedSeconds = 0;
+            consecutiveDistractionsCount = 0;
             broadcastComment(text, false);
           }
         }
@@ -571,39 +569,37 @@ function processStatusUpdate(status: string, description: string) {
   const upperStatus = status.toUpperCase();
   
   if (upperStatus === 'DISTRACTED') {
-    continuousDistractedSeconds += appSettings.screenshotInterval;
-    const displayMsg = `[POTENTIAL DISTRACTION (${continuousDistractedSeconds}s)] ${description}`;
-    console.log(`[Status Update] User is DISTRACTED. Description: "${description}". Accumulated duration: ${continuousDistractedSeconds}s`);
+    consecutiveDistractionsCount++;
+    const durationSec = consecutiveDistractionsCount * appSettings.screenshotInterval;
+    const displayMsg = `[POTENTIAL DISTRACTION (${durationSec}s)] ${description}`;
+    console.log(`[Status Update] User is DISTRACTED. Description: "${description}". Consecutive count: ${consecutiveDistractionsCount}`);
     
-    if (continuousDistractedSeconds >= 30) {
+    if (consecutiveDistractionsCount >= appSettings.consecutiveDistractionsLimit) {
       broadcastComment(`[DISTRACTED] ${description}`, true);
       
-      // Warn every 30s
-      if (continuousDistractedSeconds === 30 || continuousDistractedSeconds % 30 === 0) {
-        console.log(`[Status Update] Distraction threshold met (>= 30s). Triggering Windows toast and verbal scolding...`);
-        if (activeSessionId) {
-          db.addDistraction(activeSessionId, "Sustained distraction flagged by Gemini", description);
+      console.log(`[Status Update] Distraction threshold met (>= limit). Triggering Windows toast and verbal scolding...`);
+      if (activeSessionId) {
+        db.addDistraction(activeSessionId, "Sustained distraction flagged by Gemini", description);
+      }
+      showToast("Multidoro Distraction Warning!", description);
+      
+      if (liveSession) {
+        const payload = {
+          text: `[WARN] Speak a warning now!`
+        };
+        if (appSettings.debugLogs) {
+          console.log('[Gemini WS Outbound - Warn]', JSON.stringify(payload, null, 2));
+        } else {
+          console.log(`[Status Update] Sending [WARN] message to prompt vocal warning.`);
         }
-        showToast("Multidoro Distraction Warning!", description);
-        
-        if (liveSession) {
-          const payload = {
-            text: `[WARN] Speak a warning now!`
-          };
-          if (appSettings.debugLogs) {
-            console.log('[Gemini WS Outbound - Warn]', JSON.stringify(payload, null, 2));
-          } else {
-            console.log(`[Status Update] Sending [WARN] message to prompt vocal warning.`);
-          }
-          liveSession.sendRealtimeInput(payload);
-        }
+        liveSession.sendRealtimeInput(payload);
       }
     } else {
       broadcastComment(displayMsg, false);
     }
   } else if (upperStatus === 'ON_TASK') {
-    console.log(`[Status Update] User is ON_TASK. Description: "${description}". Resetting distraction duration.`);
-    continuousDistractedSeconds = 0;
+    console.log(`[Status Update] User is ON_TASK. Description: "${description}". Resetting distraction count.`);
+    consecutiveDistractionsCount = 0;
     broadcastComment(description, false);
   } else {
     console.log(`[Status Update] Unknown status received: "${status}". Description: "${description}"`);
@@ -759,7 +755,7 @@ function resetTimer() {
     clearTimeout(screenCaptureTimeout);
     screenCaptureTimeout = null;
   }
-  continuousDistractedSeconds = 0;
+  consecutiveDistractionsCount = 0;
 
   // If focus session was active, record it as aborted
   if (activeSessionId && timerPhase === 'focus') {
@@ -785,7 +781,7 @@ function handleTimerComplete() {
     clearTimeout(screenCaptureTimeout);
     screenCaptureTimeout = null;
   }
-  continuousDistractedSeconds = 0;
+  consecutiveDistractionsCount = 0;
 
   // Update DB session
   if (activeSessionId) {
