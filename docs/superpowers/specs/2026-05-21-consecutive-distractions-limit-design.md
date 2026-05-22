@@ -43,6 +43,7 @@ To make distraction monitoring robust and configurable, we will track the number
   * Label: "Consecutive Distractions Limit"
   * Attributes: `type="number" min="1" max="10" value="1"`
   * Help description text.
+* Fix the duplicate "HUD HUD" typo in the HUD toggle switch label, renaming it to "Always-on-top HUD Overlay".
 
 ### Frontend Logic (`src/renderer/renderer.ts`)
 * Map UI settings element `setting-consecutive-distractions` to retrieve, display, and save `consecutiveDistractionsLimit`.
