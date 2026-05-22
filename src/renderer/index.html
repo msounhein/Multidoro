@@ -92,7 +92,7 @@
               <label class="switch-container">
                 <input type="checkbox" id="chk-hud-overlay">
                 <span class="switch-slider"></span>
-                <span class="switch-label">Always-on-top HUD HUD Overlay</span>
+                <span class="switch-label">Always-on-top HUD Overlay</span>
               </label>
             </div>
           </div>
@@ -238,6 +238,11 @@
                 <label for="setting-scan-interval">Screen Scan Interval (Seconds)</label>
                 <input type="number" id="setting-scan-interval" min="1" max="60" value="5">
                 <p class="form-help">Recommended: 5 seconds for normal usage.</p>
+              </div>
+              <div class="form-group">
+                <label for="setting-consecutive-distractions">Consecutive Distractions Limit</label>
+                <input type="number" id="setting-consecutive-distractions" min="1" max="10" value="1">
+                <p class="form-help">Default is 1 (immediate alarm on first distraction).</p>
               </div>
             </div>
             
