@@ -238,7 +238,7 @@ function showToast(title: string, body: string) {
   }
 }
 
-function processStatusUpdate(status: string, description: string, scoldVerbalWarning: string) {
+async function processStatusUpdate(status: string, description: string, scoldVerbalWarning: string) {
   const upperStatus = status.toUpperCase();
   
   if (upperStatus === 'DISTRACTED') {
@@ -256,8 +256,43 @@ function processStatusUpdate(status: string, description: string, scoldVerbalWar
       }
       showToast("Multidoro Distraction Warning!", description);
       
-      if (appSettings.debugLogs) {
-        console.log(`[Status Update] Scold verbal warning ready (not yet spoken): "${scoldVerbalWarning}"`);
+      if (scoldVerbalWarning && appSettings.voiceEnabled) {
+        try {
+          const ai = getAIClient();
+          if (ai) {
+            console.log(`[Status Update] Generating on-demand TTS scolding using voice: ${appSettings.voiceName || 'Zephyr'}`);
+            const ttsResponse = await ai.models.generateContent({
+              model: 'gemini-3.1-flash-tts-preview',
+              contents: scoldVerbalWarning,
+              config: {
+                responseModalities: ['AUDIO'],
+                speechConfig: {
+                  voiceConfig: {
+                    prebuiltVoiceConfig: {
+                      voiceName: appSettings.voiceName || 'Zephyr'
+                    }
+                  }
+                }
+              }
+            });
+
+            if (ttsResponse.usageMetadata) {
+              currentSessionInputTokens += ttsResponse.usageMetadata.promptTokenCount || 0;
+              currentSessionOutputTokens += ttsResponse.usageMetadata.candidatesTokenCount || 0;
+            }
+
+            if (ttsResponse.candidates?.[0]?.content?.parts) {
+              for (const part of ttsResponse.candidates[0].content.parts) {
+                if (part.inlineData && part.inlineData.data && part.inlineData.mimeType) {
+                  console.log(`[Status Update] Streaming TTS audio chunk: mimeType=${part.inlineData.mimeType}, size=${part.inlineData.data.length}`);
+                  broadcastAudio(part.inlineData.data, part.inlineData.mimeType);
+                }
+              }
+            }
+          }
+        } catch (ttsErr) {
+          console.error('[Status Update] TTS generation failed:', ttsErr);
+        }
       }
     } else {
       broadcastComment(displayMsg, false);
