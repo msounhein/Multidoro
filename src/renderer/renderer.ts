@@ -418,6 +418,8 @@ const saveBtn = document.getElementById('btn-save-settings') as HTMLButtonElemen
 const settingsStatusMsg = document.getElementById('settings-status-msg') as HTMLSpanElement;
 const consecutiveDistractionsInput = document.getElementById('setting-consecutive-distractions') as HTMLInputElement;
 const captureModeSelect = document.getElementById('setting-capture-mode') as HTMLSelectElement;
+const geminiModelSelect = document.getElementById('setting-gemini-model') as HTMLSelectElement;
+const voiceNameSelect = document.getElementById('setting-voice-name') as HTMLSelectElement;
 
 visibilityBtn.addEventListener('click', () => {
   apiInput.type = apiInput.type === 'password' ? 'text' : 'password';
@@ -444,13 +446,10 @@ if (linkToSettings) {
   });
 }
 
-let loadedGeminiModel = 'gemini-3.5-flash';
-let loadedVoiceName = 'Zephyr';
-
 async function loadSettingsData() {
   const settings: AppSettings = await (window as any).electronAPI.getSettings();
-  loadedGeminiModel = settings.geminiModel || 'gemini-3.5-flash';
-  loadedVoiceName = settings.voiceName || 'Zephyr';
+  if (geminiModelSelect) geminiModelSelect.value = settings.geminiModel || 'gemini-3.5-flash';
+  if (voiceNameSelect) voiceNameSelect.value = settings.voiceName || 'Zephyr';
   apiInput.value = settings.apiKey || '';
   intervalInput.value = (settings.screenshotInterval || 5).toString();
   voiceEnabledChk.checked = settings.voiceEnabled !== false;
@@ -500,8 +499,8 @@ saveBtn.addEventListener('click', async () => {
     debugLogs: debugLogsChk ? debugLogsChk.checked : false,
     consecutiveDistractionsLimit: parseInt(consecutiveDistractionsInput.value, 10) || 1,
     screenCaptureMode: captureModeSelect ? captureModeSelect.value : 'primary',
-    geminiModel: loadedGeminiModel,
-    voiceName: loadedVoiceName
+    geminiModel: geminiModelSelect ? geminiModelSelect.value : 'gemini-3.5-flash',
+    voiceName: voiceNameSelect ? voiceNameSelect.value : 'Zephyr'
   };
   
   await (window as any).electronAPI.saveSettings(updatedSettings);
