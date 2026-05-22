@@ -52,8 +52,17 @@ let activeSessionId = '';
 let currentSessionInputTokens = 0;
 let currentSessionOutputTokens = 0;
 
-// Gemini Live Connection State
-let liveSession: any = null;
+// Gemini Client & Connection State
+let aiClient: GoogleGenAI | null = null;
+
+function getAIClient(): GoogleGenAI | null {
+  if (!appSettings.apiKey) return null;
+  if (!aiClient) {
+    aiClient = new GoogleGenAI({ apiKey: appSettings.apiKey });
+  }
+  return aiClient;
+}
+
 let screenCaptureTimeout: NodeJS.Timeout | null = null;
 let consecutiveDistractionsCount = 0;
 
@@ -229,334 +238,7 @@ function showToast(title: string, body: string) {
   }
 }
 
-// Gemini Live API Handler
-async function connectGemini() {
-  if (!appSettings.apiKey) {
-    console.warn('Cannot connect: API key is missing.');
-    return;
-  }
-  if (liveSession) return; // Already connected
-
-  try {
-    const ai = new GoogleGenAI({ apiKey: appSettings.apiKey });
-    const model = 'models/gemini-3.1-flash-live-preview';
-    
-    const promptText = `You are Multidoro, a strict Pomodoro coach who monitors the user's screen screenshots.
-The user is currently in a FOCUS session working on the task: "${activeTaskName}".
-Your role is to strictly verify if their screen screenshots match their task.
-
-On initial connection, do not make any tool calls or speak until you receive the first screenshot frame.
-
-When you receive a screenshot (video frame):
-- If the screenshot is completely black, blank, or you cannot see any application windows/content, report the status as ON_TASK with the description "Screen blank or transitioning". Do not guess or hallucinate any activities.
-- Otherwise, you MUST call the 'report_distraction_status' tool to report the user's status.
-- DO NOT speak verbally (do not output audio) in response to the screenshot. You must ONLY call the tool.
-
-When you receive a text message from the system starting with '[WARN]':
-- You MUST speak a short verbal warning (output audio, under 15 words) telling the user to return to their task: "${activeTaskName}", and explicitly state what they were caught doing (e.g., "Stop watching YouTube and get back to writing Python tests!").
-- DO NOT call any tool in response to '[WARN]'.`;
-
-    const config = {
-      responseModalities: [ Modality.AUDIO ],
-      systemInstruction: {
-        parts: [ { text: promptText } ]
-      },
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: 'Zephyr'
-          }
-        }
-      },
-      tools: [
-        {
-          functionDeclarations: [
-            {
-              name: 'report_distraction_status',
-              description: 'Report the current distraction status based on screenshot content analysis.',
-              parameters: {
-                type: Type.OBJECT,
-                properties: {
-                  status: {
-                    type: Type.STRING,
-                    description: 'The status of the user: ON_TASK if they are working on the target task, DISTRACTED if they are doing anything else.'
-                  },
-                  description: {
-                    type: Type.STRING,
-                    description: 'A brief description of what they are doing on the screen.'
-                  }
-                },
-                required: ['status', 'description']
-              }
-            }
-          ]
-        }
-      ]
-    };
-
-    console.log('Connecting to Gemini Live WebSocket...');
-    const session = await ai.live.connect({
-      model,
-      callbacks: {
-        onopen: () => {
-          console.log('Gemini Live session connected.');
-          broadcastComment('Gemini Coach connected. Screen monitoring active.', false);
-        },
-        onmessage: (message: any) => {
-          if (appSettings.debugLogs) {
-            console.log('[Gemini WS Inbound]', JSON.stringify(truncateLargeData(message), null, 2));
-          }
-          if (message.usageMetadata) {
-            currentSessionInputTokens = Math.max(currentSessionInputTokens, message.usageMetadata.promptTokenCount || 0);
-            currentSessionOutputTokens = Math.max(currentSessionOutputTokens, message.usageMetadata.responseTokenCount || 0);
-          }
-          handleGeminiMessage(message);
-        },
-        onerror: (err: any) => {
-          console.error('[Gemini WS Error]:', err);
-        },
-        onclose: (e: any) => {
-          console.log('[Gemini WS Close] Code:', e.code, 'Reason:', e.reason);
-          liveSession = null;
-          
-          // Auto-reconnect if we are still actively focusing and no session exists
-          if (timerPhase === 'focus' && !isPaused) {
-            console.log('[Gemini WS Close] Unexpected close during focus phase. Auto-reconnecting in 3 seconds...');
-            setTimeout(() => {
-              if (timerPhase === 'focus' && !isPaused && !liveSession) {
-                console.log('[Gemini WS Close] Reconnecting session after abnormal close...');
-                connectGemini().catch(err => {
-                  console.error('[Gemini WS Close] Auto-reconnect failed:', err);
-                });
-              }
-            }, 3000);
-          }
-        }
-      },
-      config
-    });
-
-    liveSession = session;
-    console.log('Gemini Live session variable assigned. Starting screenshot loop.');
-    consecutiveDistractionsCount = 0;
-    scheduleNextScreenshotCheck(true);
-  } catch (err) {
-    console.error('Gemini connection failed:', err);
-    broadcastComment(`Gemini Connection Error: ${(err as Error).message}`, false);
-  }
-}
-
-function disconnectGemini() {
-  if (liveSession) {
-    try {
-      liveSession.close();
-    } catch (e) {
-      console.error('Error closing live session:', e);
-    }
-    liveSession = null;
-  }
-}
-
-function truncateLargeData(obj: any): any {
-  if (typeof obj !== 'object' || obj === null) return obj;
-  if (Array.isArray(obj)) {
-    return obj.map(truncateLargeData);
-  }
-  const truncated: any = {};
-  for (const key of Object.keys(obj)) {
-    const val = obj[key];
-    if (key === 'data' && typeof val === 'string' && val.length > 100) {
-      truncated[key] = `${val.substring(0, 30)}... [truncated ${val.length} bytes]`;
-    } else if (key === 'video' && typeof val === 'object' && val !== null && val.data) {
-      truncated[key] = {
-        ...val,
-        data: `${val.data.substring(0, 30)}... [truncated ${val.data.length} bytes]`
-      };
-    } else {
-      truncated[key] = truncateLargeData(val);
-    }
-  }
-  return truncated;
-}
-
-function handleGeminiMessage(message: any) {
-  // Handle GoAway signal from Gemini Live
-  if (message.goAway) {
-    console.log('[Gemini GoAway] Received GoAway signal from server. Time left:', message.goAway.timeLeft);
-    disconnectGemini();
-    setTimeout(() => {
-      if (timerPhase === 'focus' && !isPaused && !liveSession) {
-        console.log('[Gemini GoAway] Reconnecting session after GoAway signal...');
-        connectGemini().catch(err => {
-          console.error('[Gemini GoAway] Reconnect failed:', err);
-        });
-      }
-    }, 1000);
-    return;
-  }
-
-  // Handle root-level toolCall from Gemini Live API
-  if (message.toolCall?.functionCalls) {
-    for (const functionCall of message.toolCall.functionCalls) {
-      console.log(`[Gemini Tool Call] Received functionCall: name="${functionCall.name}", id="${functionCall.id}", args=`, functionCall.args);
-      
-      if (functionCall.name === 'report_distraction_status') {
-        const { status, description } = functionCall.args as { status: string; description: string };
-        
-        // Process status change locally
-        processStatusUpdate(status, description);
-        
-        // Send tool response to complete the WebSocket transaction
-        if (liveSession) {
-          const toolResponse = {
-            functionResponses: [
-              {
-                name: 'report_distraction_status',
-                response: {
-                  output: {
-                    success: true
-                  }
-                },
-                id: functionCall.id
-              }
-            ]
-          };
-          if (appSettings.debugLogs) {
-            console.log('[Gemini WS Outbound - ToolResponse]', JSON.stringify(toolResponse, null, 2));
-          } else {
-            console.log(`[Gemini Tool Call] Sending tool response for id="${functionCall.id}"`);
-          }
-          try {
-            liveSession.sendToolResponse(toolResponse);
-          } catch (err) {
-            console.error('[Gemini Tool Call] Failed to send tool response:', err);
-          }
-        }
-      }
-    }
-  }
-
-  if (message.serverContent?.modelTurn?.parts) {
-    for (const part of message.serverContent.modelTurn.parts) {
-      // Stream Audio (base64 PCM) to Renderer (Gemini will only generate audio in response to [WARN])
-      if (part.inlineData) {
-        console.log(`[Gemini Response] Streaming audio chunk: mimeType=${part.inlineData.mimeType}, size=${part.inlineData.data?.length || 0}`);
-        broadcastAudio(part.inlineData.data, part.inlineData.mimeType);
-      }
-      
-      // Handle tool call (functionCall)
-      if (part.functionCall) {
-        const functionCall = part.functionCall;
-        console.log(`[Gemini Tool Call] Received functionCall: name="${functionCall.name}", id="${functionCall.id}", args=`, functionCall.args);
-        
-        if (functionCall.name === 'report_distraction_status') {
-          const { status, description } = functionCall.args as { status: string; description: string };
-          
-          // Process status change locally
-          processStatusUpdate(status, description);
-          
-          // Send tool response to complete the WebSocket transaction
-          if (liveSession) {
-            const toolResponse = {
-              functionResponses: [
-                {
-                  name: 'report_distraction_status',
-                  response: {
-                    output: {
-                      success: true
-                    }
-                  },
-                  id: functionCall.id
-                }
-              ]
-            };
-            if (appSettings.debugLogs) {
-              console.log('[Gemini WS Outbound - ToolResponse]', JSON.stringify(toolResponse, null, 2));
-            } else {
-              console.log(`[Gemini Tool Call] Sending tool response for id="${functionCall.id}"`);
-            }
-            try {
-              liveSession.sendToolResponse(toolResponse);
-            } catch (err) {
-              console.error('[Gemini Tool Call] Failed to send tool response:', err);
-            }
-          }
-        }
-      }
-
-      // Handle text comment (Fallback)
-      if (part.text) {
-        const text = part.text.trim();
-        const upperText = text.toUpperCase();
-        console.log(`[Gemini Response] Raw text comment: "${text}"`);
-        
-        // Skip echo warning triggers
-        if (upperText.includes('[WARN]')) {
-          continue;
-        }
-        
-        if (upperText.includes('STATUS: DISTRACTED')) {
-          consecutiveDistractionsCount++;
-          const durationSec = consecutiveDistractionsCount * appSettings.screenshotInterval;
-          const cleanText = text.replace(/STATUS:\s*DISTRACTED\s*-?\s*/i, '');
-          const displayMsg = `[POTENTIAL DISTRACTION (${durationSec}s)] ${cleanText}`;
-          console.log(`[Gemini Response] Fallback Classified: DISTRACTED. Consecutive count: ${consecutiveDistractionsCount}`);
-          
-          if (consecutiveDistractionsCount >= appSettings.consecutiveDistractionsLimit) {
-            broadcastComment(`[DISTRACTED] ${cleanText}`, true);
-            
-            console.log(`[Gemini Response] Threshold reached. Triggering active scolding warning...`);
-            if (activeSessionId) {
-              db.addDistraction(activeSessionId, "Sustained distraction flagged by Gemini", cleanText);
-            }
-            showToast("Multidoro Distraction Warning!", cleanText);
-            
-            if (liveSession) {
-              liveSession.sendRealtimeInput({
-                text: `[WARN] Speak a warning now! The user was caught doing: ${cleanText}`
-              });
-            }
-          } else {
-            broadcastComment(displayMsg, false);
-          }
-          
-        } else if (upperText.includes('STATUS: ON_TASK')) {
-          console.log(`[Gemini Response] Fallback Classified: ON_TASK. Resetting continuous distraction count.`);
-          consecutiveDistractionsCount = 0;
-          const cleanText = text.replace(/STATUS:\s*ON_TASK\s*-?\s*/i, '');
-          broadcastComment(cleanText, false);
-        } else {
-          // General fallback
-          if (upperText.includes('DISTRACTED') || upperText.includes('WARNING')) {
-            consecutiveDistractionsCount++;
-            const durationSec = consecutiveDistractionsCount * appSettings.screenshotInterval;
-            console.log(`[Gemini Response] Fallback Classified: DISTRACTED/WARNING. Consecutive count: ${consecutiveDistractionsCount}`);
-            if (consecutiveDistractionsCount >= appSettings.consecutiveDistractionsLimit) {
-              broadcastComment(`[DISTRACTED] ${text}`, true);
-              if (activeSessionId) {
-                db.addDistraction(activeSessionId, "Distraction detected by Gemini", text);
-              }
-              showToast("Multidoro Distraction Warning!", text);
-              if (liveSession) {
-                liveSession.sendRealtimeInput({
-                  text: `[WARN] Speak a warning now! The user was caught doing: ${text}`
-                });
-              }
-            } else {
-              broadcastComment(`[POTENTIAL DISTRACTION (${durationSec}s)] ${text}`, false);
-            }
-          } else {
-            console.log(`[Gemini Response] Fallback Classified: ON_TASK (default). Resetting continuous distraction count.`);
-            consecutiveDistractionsCount = 0;
-            broadcastComment(text, false);
-          }
-        }
-      }
-    }
-  }
-}
-
-function processStatusUpdate(status: string, description: string) {
+function processStatusUpdate(status: string, description: string, scoldVerbalWarning: string) {
   const upperStatus = status.toUpperCase();
   
   if (upperStatus === 'DISTRACTED') {
@@ -574,16 +256,8 @@ function processStatusUpdate(status: string, description: string) {
       }
       showToast("Multidoro Distraction Warning!", description);
       
-      if (liveSession) {
-        const payload = {
-          text: `[WARN] Speak a warning now! The user was caught doing: ${description}`
-        };
-        if (appSettings.debugLogs) {
-          console.log('[Gemini WS Outbound - Warn]', JSON.stringify(payload, null, 2));
-        } else {
-          console.log(`[Status Update] Sending [WARN] message to prompt vocal warning: "${description}"`);
-        }
-        liveSession.sendRealtimeInput(payload);
+      if (appSettings.debugLogs) {
+        console.log(`[Status Update] Scold verbal warning ready (not yet spoken): "${scoldVerbalWarning}"`);
       }
     } else {
       broadcastComment(displayMsg, false);
@@ -630,16 +304,24 @@ async function captureScreen(targetDisplayId?: string): Promise<Buffer> {
   return matchedSource.thumbnail.toJPEG(80);
 }
 
-// Screenshot Capture loop
-async function runScreenshotCheck() {
-  if (!liveSession || timerPhase !== 'focus' || isPaused) {
-    console.log(`[Screenshot Check] Skipping: liveSession=${!!liveSession}, phase=${timerPhase}, isPaused=${isPaused}`);
+// Stateless Screen Classification check
+async function runScreenClassification() {
+  if (timerPhase !== 'focus' || isPaused) {
+    console.log(`[Screen Classification] Skipping: phase=${timerPhase}, isPaused=${isPaused}`);
+    scheduleNextScreenshotCheck();
+    return;
+  }
+
+  const ai = getAIClient();
+  if (!ai) {
+    console.warn('[Screen Classification] Skipping check: Gemini API key is missing.');
+    broadcastComment('Gemini Coach: API key is missing. Add it in Settings.', false);
     scheduleNextScreenshotCheck();
     return;
   }
 
   try {
-    console.log('[Screenshot Check] Capturing screenshot...');
+    console.log('[Screen Classification] Capturing screenshot...');
     
     let targetDisplayId: string | undefined = undefined;
     try {
@@ -672,20 +354,72 @@ async function runScreenshotCheck() {
     const imgBuffer = await captureScreen(targetDisplayId);
     const base64Data = imgBuffer.toString('base64');
 
-    const payload = {
-      video: {
-        data: base64Data,
-        mimeType: 'image/jpeg'
-      },
-      text: `[Frame evaluation] Target Task: "${activeTaskName}". Analyze screenshot and state if focused or distracted.`
-    };
+    const promptText = `You are Multidoro, a strict Pomodoro coach who monitors the user's screen screenshots.
+The user is currently in a FOCUS session working on the task: "${activeTaskName}".
+Your role is to strictly verify if their screen screenshot matches their task.
+
+Analyze the screenshot:
+1. If the screenshot is completely black, blank, or you cannot see any application windows/content, report:
+   - status: "ON_TASK"
+   - description: "Screen blank or transitioning"
+   - scold_verbal_warning: ""
+2. Otherwise, determine if the user is ON_TASK or DISTRACTED.
+   - If they are doing anything unrelated to their task "${activeTaskName}", they are DISTRACTED.
+   - In the description, describe briefly what they are doing on the screen.
+   - If they are DISTRACTED, write a short, strict, direct verbal warning (under 15 words) in 'scold_verbal_warning' addressing the user. For example: "Stop looking at shoes and write your API code!" or "Close Twitter right now and focus on your math homework!". If they are ON_TASK, set 'scold_verbal_warning' to an empty string.`;
+
+    const modelName = appSettings.geminiModel || 'gemini-3.5-flash';
     if (appSettings.debugLogs) {
-      console.log('[Gemini WS Outbound - Frame]', JSON.stringify(truncateLargeData(payload), null, 2));
+      console.log(`[Screen Classification] Sending request to model: ${modelName}`);
     }
-    // Send frame to Gemini Live
-    liveSession.sendRealtimeInput(payload);
+
+    const responseSchema = {
+      type: Type.OBJECT,
+      properties: {
+        status: { type: Type.STRING, enum: ['ON_TASK', 'DISTRACTED'] },
+        description: { type: Type.STRING },
+        scold_verbal_warning: { type: Type.STRING }
+      },
+      required: ['status', 'description', 'scold_verbal_warning']
+    };
+
+    const response = await ai.models.generateContent({
+      model: modelName,
+      contents: [
+        {
+          inlineData: {
+            data: base64Data,
+            mimeType: 'image/jpeg'
+          }
+        },
+        promptText
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseJsonSchema: responseSchema
+      }
+    });
+
+    if (response.usageMetadata) {
+      currentSessionInputTokens += response.usageMetadata.promptTokenCount || 0;
+      currentSessionOutputTokens += response.usageMetadata.candidatesTokenCount || 0;
+    }
+
+    const resultText = response.text;
+    if (appSettings.debugLogs) {
+      console.log(`[Screen Classification] Response text: ${resultText}`);
+    }
+
+    const result = JSON.parse(resultText || '{}');
+    const status = result.status || 'ON_TASK';
+    const description = result.description || 'No description provided';
+    const scoldVerbalWarning = result.scold_verbal_warning || '';
+
+    await processStatusUpdate(status, description, scoldVerbalWarning);
+
   } catch (error) {
-    console.error('[Screenshot Check] Screenshot capture or send failed:', error);
+    console.error('[Screen Classification] Failed:', error);
+    broadcastComment(`Gemini Coach: Check failed. ${(error as Error).message}`, false);
   } finally {
     scheduleNextScreenshotCheck();
   }
@@ -693,12 +427,12 @@ async function runScreenshotCheck() {
 
 function scheduleNextScreenshotCheck(immediate: boolean = false) {
   if (screenCaptureTimeout) clearTimeout(screenCaptureTimeout);
-  if (timerPhase === 'focus' && !isPaused && liveSession) {
+  if (timerPhase === 'focus' && !isPaused) {
     const delay = immediate ? 500 : appSettings.screenshotInterval * 1000;
     console.log(`[Screenshot Check] Scheduling next capture in ${immediate ? '0.5' : appSettings.screenshotInterval}s`);
-    screenCaptureTimeout = setTimeout(runScreenshotCheck, delay);
+    screenCaptureTimeout = setTimeout(runScreenClassification, delay);
   } else {
-    console.log('[Screenshot Check] Loop stopped: phase is not focus, or is paused, or liveSession is inactive');
+    console.log('[Screenshot Check] Loop stopped: phase is not focus, or is paused');
   }
 }
 
@@ -756,7 +490,6 @@ function saveSessionTokenStats(status: 'completed' | 'interrupted' | 'aborted') 
 
 function startTimer(taskName: string, technique: string, durationMinutes: number) {
   stopTimerInterval();
-  disconnectGemini();
 
   currentSessionInputTokens = 0;
   currentSessionOutputTokens = 0;
@@ -783,11 +516,9 @@ function startTimer(taskName: string, technique: string, durationMinutes: number
   broadcastTimerUpdate();
   broadcastComment(`Focus started: "${activeTaskName}" for ${durationMinutes}m.`, false);
 
-  // Connect Gemini Live Coach
-  connectGemini();
-
   // Start checking screenshot scanning loop
-  if (screenCaptureTimeout) clearTimeout(screenCaptureTimeout);
+  consecutiveDistractionsCount = 0;
+  scheduleNextScreenshotCheck(true);
 
   // Start timer count tick
   startTimerInterval();
@@ -802,7 +533,6 @@ function toggleTimerPause() {
 
 function resetTimer() {
   stopTimerInterval();
-  disconnectGemini();
   
   if (screenCaptureTimeout) {
     clearTimeout(screenCaptureTimeout);
@@ -832,7 +562,6 @@ function resetTimer() {
 
 function handleTimerComplete() {
   stopTimerInterval();
-  disconnectGemini();
   
   if (screenCaptureTimeout) {
     clearTimeout(screenCaptureTimeout);
@@ -961,6 +690,7 @@ function setupIpcListeners() {
   
   ipcMain.handle('save-settings', (_event, settings) => {
     saveSettings(settings);
+    aiClient = null; // Invalidate cached instance
     // If screenshot interval changed and session is active, restart timeout loop
     if (screenCaptureTimeout && timerPhase === 'focus') {
       clearTimeout(screenCaptureTimeout);
