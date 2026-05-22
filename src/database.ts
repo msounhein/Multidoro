@@ -38,7 +38,7 @@ export interface AppSettings {
 export class MultidoroDatabase {
   private dbPath: string;
   private userDataPath: string;
-  private db: any = null;
+  private db: initSqlJs.Database | null = null;
   public initializedPromise: Promise<void>;
 
   constructor(userDataPath: string) {
@@ -54,13 +54,16 @@ export class MultidoroDatabase {
         locateFile: file => path.join(__dirname, file)
       });
 
+      let dbInstance: initSqlJs.Database;
       if (fs.existsSync(this.dbPath)) {
         const fileBuffer = fs.readFileSync(this.dbPath);
-        this.db = new SQL.Database(fileBuffer);
-        this.db.run('PRAGMA foreign_keys = ON;');
+        dbInstance = new SQL.Database(fileBuffer);
+        dbInstance.run('PRAGMA foreign_keys = ON;');
+        this.db = dbInstance;
       } else {
-        this.db = new SQL.Database();
-        this.db.run('PRAGMA foreign_keys = ON;');
+        dbInstance = new SQL.Database();
+        dbInstance.run('PRAGMA foreign_keys = ON;');
+        this.db = dbInstance;
         this.createTables();
         this.save();
       }
@@ -70,23 +73,23 @@ export class MultidoroDatabase {
     } catch (error) {
       console.error('Failed to initialize SQLite database:', error);
       // Fallback to empty in-memory DB if file loading fails
-      const initSqlJsFallback = require('sql.js');
-      const SQL = await initSqlJsFallback();
-      this.db = new SQL.Database();
-      this.db.run('PRAGMA foreign_keys = ON;');
+      const SQL = await initSqlJs();
+      const dbInstance = new SQL.Database();
+      dbInstance.run('PRAGMA foreign_keys = ON;');
+      this.db = dbInstance;
       this.createTables();
     }
   }
 
   private createTables() {
-    this.db.run('PRAGMA foreign_keys = ON;');
-    this.db.run(`
+    this.db!.run('PRAGMA foreign_keys = ON;');
+    this.db!.run(`
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT
       );
     `);
-    this.db.run(`
+    this.db!.run(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         taskName TEXT NOT NULL,
@@ -102,7 +105,7 @@ export class MultidoroDatabase {
         estimatedCost REAL
       );
     `);
-    this.db.run(`
+    this.db!.run(`
       CREATE TABLE IF NOT EXISTS distractions (
         id TEXT PRIMARY KEY,
         sessionId TEXT NOT NULL,
@@ -120,7 +123,7 @@ export class MultidoroDatabase {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      const binaryData = this.db.export();
+      const binaryData = this.db!.export();
       fs.writeFileSync(this.dbPath, Buffer.from(binaryData));
     } catch (error) {
       console.error('Failed to save SQLite database to disk:', error);
@@ -154,39 +157,45 @@ export class MultidoroDatabase {
         const data = JSON.parse(content);
         
         if (data.sessions && Array.isArray(data.sessions)) {
-          const stmt = this.db.prepare(`
+          const stmt = this.db!.prepare(`
             INSERT OR REPLACE INTO sessions (
               id, taskName, startTime, endTime, durationMinutes, type, technique, status, distractionsCount, inputTokens, outputTokens, estimatedCost
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `);
-          for (const s of data.sessions) {
-            stmt.run([
-              s.id,
-              s.taskName,
-              s.startTime,
-              s.endTime || null,
-              s.durationMinutes,
-              s.type,
-              s.technique,
-              s.status,
-              s.distractionsCount || 0,
-              s.inputTokens !== undefined ? s.inputTokens : null,
-              s.outputTokens !== undefined ? s.outputTokens : null,
-              s.estimatedCost !== undefined ? s.estimatedCost : null
-            ]);
+          try {
+            for (const s of data.sessions) {
+              stmt.run([
+                s.id,
+                s.taskName,
+                s.startTime,
+                s.endTime || null,
+                s.durationMinutes,
+                s.type,
+                s.technique,
+                s.status,
+                s.distractionsCount || 0,
+                s.inputTokens !== undefined ? s.inputTokens : null,
+                s.outputTokens !== undefined ? s.outputTokens : null,
+                s.estimatedCost !== undefined ? s.estimatedCost : null
+              ]);
+            }
+          } finally {
+            stmt.free();
           }
-          stmt.free();
         }
 
         if (data.distractions && Array.isArray(data.distractions)) {
-          const stmt = this.db.prepare(`
+          const stmt = this.db!.prepare(`
             INSERT OR REPLACE INTO distractions (id, sessionId, timestamp, detectedActivity, remark)
             VALUES (?, ?, ?, ?, ?)
           `);
-          for (const d of data.distractions) {
-            stmt.run([d.id, d.sessionId, d.timestamp, d.detectedActivity, d.remark]);
+          try {
+            for (const d of data.distractions) {
+              stmt.run([d.id, d.sessionId, d.timestamp, d.detectedActivity, d.remark]);
+            }
+          } finally {
+            stmt.free();
           }
-          stmt.free();
         }
 
         migratedAny = true;
@@ -224,22 +233,25 @@ export class MultidoroDatabase {
       distractionsCount: 0
     };
 
-    const stmt = this.db.prepare(`
+    const stmt = this.db!.prepare(`
       INSERT INTO sessions (id, taskName, startTime, endTime, durationMinutes, type, technique, status, distractionsCount)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run([
-      newSession.id,
-      newSession.taskName,
-      newSession.startTime,
-      null,
-      newSession.durationMinutes,
-      newSession.type,
-      newSession.technique,
-      newSession.status,
-      newSession.distractionsCount
-    ]);
-    stmt.free();
+    try {
+      stmt.run([
+        newSession.id,
+        newSession.taskName,
+        newSession.startTime,
+        null,
+        newSession.durationMinutes,
+        newSession.type,
+        newSession.technique,
+        newSession.status,
+        newSession.distractionsCount
+      ]);
+    } finally {
+      stmt.free();
+    }
     this.save();
     return newSession;
   }
@@ -255,38 +267,52 @@ export class MultidoroDatabase {
     const output = tokenData ? tokenData.outputTokens : null;
     const cost = tokenData ? tokenData.estimatedCost : null;
 
-    const checkStmt = this.db.prepare('SELECT * FROM sessions WHERE id = ?');
-    checkStmt.bind([id]);
-    const exists = checkStmt.step();
-    checkStmt.free();
+    const checkStmt = this.db!.prepare('SELECT * FROM sessions WHERE id = ?');
+    let exists = false;
+    try {
+      checkStmt.bind([id]);
+      exists = checkStmt.step();
+    } finally {
+      checkStmt.free();
+    }
 
     if (!exists) return null;
 
     if (tokenData) {
-      const stmt = this.db.prepare(`
+      const stmt = this.db!.prepare(`
         UPDATE sessions 
         SET status = ?, endTime = ?, inputTokens = ?, outputTokens = ?, estimatedCost = ?
         WHERE id = ?
       `);
-      stmt.run([status, resolvedEndTime, input, output, cost, id]);
-      stmt.free();
+      try {
+        stmt.run([status, resolvedEndTime, input, output, cost, id]);
+      } finally {
+        stmt.free();
+      }
     } else {
-      const stmt = this.db.prepare(`
+      const stmt = this.db!.prepare(`
         UPDATE sessions 
         SET status = ?, endTime = ?
         WHERE id = ?
       `);
-      stmt.run([status, resolvedEndTime, id]);
-      stmt.free();
+      try {
+        stmt.run([status, resolvedEndTime, id]);
+      } finally {
+        stmt.free();
+      }
     }
     this.save();
 
     // Retrieve and return updated session
-    const getStmt = this.db.prepare('SELECT * FROM sessions WHERE id = ?');
-    getStmt.bind([id]);
-    getStmt.step();
-    const row = getStmt.getAsObject();
-    getStmt.free();
+    const getStmt = this.db!.prepare('SELECT * FROM sessions WHERE id = ?');
+    let row: initSqlJs.ParamsObject;
+    try {
+      getStmt.bind([id]);
+      getStmt.step();
+      row = getStmt.getAsObject();
+    } finally {
+      getStmt.free();
+    }
 
     return {
       id: row.id as string,
@@ -305,43 +331,57 @@ export class MultidoroDatabase {
   }
 
   public incrementSessionDistraction(sessionId: string): number {
-    const checkStmt = this.db.prepare('SELECT distractionsCount FROM sessions WHERE id = ?');
-    checkStmt.bind([sessionId]);
-    if (!checkStmt.step()) {
+    let count = 0;
+    let exists = false;
+    const checkStmt = this.db!.prepare('SELECT distractionsCount FROM sessions WHERE id = ?');
+    try {
+      checkStmt.bind([sessionId]);
+      if (checkStmt.step()) {
+        exists = true;
+        count = (checkStmt.getAsObject().distractionsCount as number) + 1;
+      }
+    } finally {
       checkStmt.free();
+    }
+
+    if (!exists) {
       return 0;
     }
-    const count = (checkStmt.getAsObject().distractionsCount as number) + 1;
-    checkStmt.free();
 
-    const stmt = this.db.prepare('UPDATE sessions SET distractionsCount = ? WHERE id = ?');
-    stmt.run([count, sessionId]);
-    stmt.free();
+    const stmt = this.db!.prepare('UPDATE sessions SET distractionsCount = ? WHERE id = ?');
+    try {
+      stmt.run([count, sessionId]);
+    } finally {
+      stmt.free();
+    }
     this.save();
     return count;
   }
 
   public getSessions(): PomodoroSession[] {
     const sessions: PomodoroSession[] = [];
-    const stmt = this.db.prepare('SELECT * FROM sessions ORDER BY startTime DESC');
-    while (stmt.step()) {
-      const row = stmt.getAsObject();
-      sessions.push({
-        id: row.id as string,
-        taskName: row.taskName as string,
-        startTime: row.startTime as string,
-        endTime: row.endTime as string | null,
-        durationMinutes: row.durationMinutes as number,
-        type: row.type as any,
-        technique: row.technique as string,
-        status: row.status as any,
-        distractionsCount: row.distractionsCount as number,
-        inputTokens: row.inputTokens !== null ? (row.inputTokens as number) : undefined,
-        outputTokens: row.outputTokens !== null ? (row.outputTokens as number) : undefined,
-        estimatedCost: row.estimatedCost !== null ? (row.estimatedCost as number) : undefined
-      });
+    const stmt = this.db!.prepare('SELECT * FROM sessions ORDER BY startTime DESC');
+    try {
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        sessions.push({
+          id: row.id as string,
+          taskName: row.taskName as string,
+          startTime: row.startTime as string,
+          endTime: row.endTime as string | null,
+          durationMinutes: row.durationMinutes as number,
+          type: row.type as any,
+          technique: row.technique as string,
+          status: row.status as any,
+          distractionsCount: row.distractionsCount as number,
+          inputTokens: row.inputTokens !== null ? (row.inputTokens as number) : undefined,
+          outputTokens: row.outputTokens !== null ? (row.outputTokens as number) : undefined,
+          estimatedCost: row.estimatedCost !== null ? (row.estimatedCost as number) : undefined
+        });
+      }
+    } finally {
+      stmt.free();
     }
-    stmt.free();
     return sessions;
   }
 
@@ -355,18 +395,21 @@ export class MultidoroDatabase {
       remark
     };
 
-    const stmt = this.db.prepare(`
+    const stmt = this.db!.prepare(`
       INSERT INTO distractions (id, sessionId, timestamp, detectedActivity, remark)
       VALUES (?, ?, ?, ?, ?)
     `);
-    stmt.run([
-      newDistraction.id,
-      newDistraction.sessionId,
-      newDistraction.timestamp,
-      newDistraction.detectedActivity,
-      newDistraction.remark
-    ]);
-    stmt.free();
+    try {
+      stmt.run([
+        newDistraction.id,
+        newDistraction.sessionId,
+        newDistraction.timestamp,
+        newDistraction.detectedActivity,
+        newDistraction.remark
+      ]);
+    } finally {
+      stmt.free();
+    }
     this.incrementSessionDistraction(sessionId);
     this.save();
     return newDistraction;
@@ -374,36 +417,42 @@ export class MultidoroDatabase {
 
   public getDistractions(): DistractionLog[] {
     const distractions: DistractionLog[] = [];
-    const stmt = this.db.prepare('SELECT * FROM distractions ORDER BY timestamp DESC');
-    while (stmt.step()) {
-      const row = stmt.getAsObject();
-      distractions.push({
-        id: row.id as string,
-        sessionId: row.sessionId as string,
-        timestamp: row.timestamp as string,
-        detectedActivity: row.detectedActivity as string,
-        remark: row.remark as string
-      });
+    const stmt = this.db!.prepare('SELECT * FROM distractions ORDER BY timestamp DESC');
+    try {
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        distractions.push({
+          id: row.id as string,
+          sessionId: row.sessionId as string,
+          timestamp: row.timestamp as string,
+          detectedActivity: row.detectedActivity as string,
+          remark: row.remark as string
+        });
+      }
+    } finally {
+      stmt.free();
     }
-    stmt.free();
     return distractions;
   }
 
   public getDistractionsForSession(sessionId: string): DistractionLog[] {
     const distractions: DistractionLog[] = [];
-    const stmt = this.db.prepare('SELECT * FROM distractions WHERE sessionId = ? ORDER BY timestamp DESC');
-    stmt.bind([sessionId]);
-    while (stmt.step()) {
-      const row = stmt.getAsObject();
-      distractions.push({
-        id: row.id as string,
-        sessionId: row.sessionId as string,
-        timestamp: row.timestamp as string,
-        detectedActivity: row.detectedActivity as string,
-        remark: row.remark as string
-      });
+    const stmt = this.db!.prepare('SELECT * FROM distractions WHERE sessionId = ? ORDER BY timestamp DESC');
+    try {
+      stmt.bind([sessionId]);
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        distractions.push({
+          id: row.id as string,
+          sessionId: row.sessionId as string,
+          timestamp: row.timestamp as string,
+          detectedActivity: row.detectedActivity as string,
+          remark: row.remark as string
+        });
+      }
+    } finally {
+      stmt.free();
     }
-    stmt.free();
     return distractions;
   }
 
@@ -418,70 +467,93 @@ export class MultidoroDatabase {
       consecutiveDistractionsLimit: 1
     };
 
-    const stmt = this.db.prepare('SELECT key, value FROM settings');
-    while (stmt.step()) {
-      const row = stmt.getAsObject();
-      const key = row.key as string;
-      const val = row.value as string;
-      if (key === 'apiKey') {
-        if (val) {
-          try {
-            if (safeStorage.isEncryptionAvailable()) {
-              settings.apiKey = safeStorage.decryptString(Buffer.from(val, 'base64'));
-            } else {
-              settings.apiKey = val;
+    const stmt = this.db!.prepare('SELECT key, value FROM settings');
+    try {
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        const key = row.key as string;
+        const val = row.value as string;
+        if (key === 'apiKey') {
+          if (val) {
+            try {
+              if (safeStorage.isEncryptionAvailable()) {
+                settings.apiKey = safeStorage.decryptString(Buffer.from(val, 'base64'));
+              } else {
+                settings.apiKey = val;
+              }
+            } catch (e) {
+              console.error('Failed to decrypt apiKey settings:', e);
+              settings.apiKey = '';
             }
-          } catch (e) {
-            console.error('Failed to decrypt apiKey settings:', e);
-            settings.apiKey = '';
           }
+        } else if (key === 'screenshotInterval') {
+          settings.screenshotInterval = parseInt(val, 10) || 5;
+        } else if (key === 'voiceEnabled') {
+          settings.voiceEnabled = val === 'true';
+        } else if (key === 'voiceVolume') {
+          settings.voiceVolume = parseFloat(val) || 0.8;
+        } else if (key === 'debugLogs') {
+          settings.debugLogs = val === 'true';
+        } else if (key === 'consecutiveDistractionsLimit') {
+          settings.consecutiveDistractionsLimit = parseInt(val, 10) || 1;
         }
-      } else if (key === 'screenshotInterval') {
-        settings.screenshotInterval = parseInt(val, 10) || 5;
-      } else if (key === 'voiceEnabled') {
-        settings.voiceEnabled = val === 'true';
-      } else if (key === 'voiceVolume') {
-        settings.voiceVolume = parseFloat(val) || 0.8;
-      } else if (key === 'debugLogs') {
-        settings.debugLogs = val === 'true';
-      } else if (key === 'consecutiveDistractionsLimit') {
-        settings.consecutiveDistractionsLimit = parseInt(val, 10) || 1;
       }
+    } finally {
+      stmt.free();
     }
-    stmt.free();
     return settings;
   }
 
-  public saveAppSettings(settings: AppSettings) {
-    const stmt = this.db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
-    
-    let encryptedKey = '';
-    if (settings.apiKey) {
-      try {
-        if (safeStorage.isEncryptionAvailable()) {
-          encryptedKey = safeStorage.encryptString(settings.apiKey).toString('base64');
-        } else {
-          encryptedKey = settings.apiKey;
-        }
-      } catch (e) {
-        console.error('Failed to encrypt apiKey settings:', e);
-      }
-    }
+  public saveAppSettings(settings: Partial<AppSettings>) {
+    if (!settings) return;
 
-    stmt.run(['apiKey', encryptedKey]);
-    stmt.run(['screenshotInterval', (settings.screenshotInterval ?? 5).toString()]);
-    stmt.run(['voiceEnabled', (settings.voiceEnabled !== false) ? 'true' : 'false']);
-    stmt.run(['voiceVolume', (settings.voiceVolume ?? 0.8).toString()]);
-    stmt.run(['debugLogs', (settings.debugLogs ?? false) ? 'true' : 'false']);
-    stmt.run(['consecutiveDistractionsLimit', (settings.consecutiveDistractionsLimit ?? 1).toString()]);
-    stmt.free();
+    const stmt = this.db!.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+    try {
+      if (settings.apiKey !== undefined && settings.apiKey !== null) {
+        let encryptedKey = '';
+        if (settings.apiKey) {
+          try {
+            if (safeStorage.isEncryptionAvailable()) {
+              encryptedKey = safeStorage.encryptString(settings.apiKey).toString('base64');
+            } else {
+              encryptedKey = settings.apiKey;
+            }
+          } catch (e) {
+            console.error('Failed to encrypt apiKey settings:', e);
+          }
+        }
+        stmt.run(['apiKey', encryptedKey]);
+      }
+
+      if (settings.screenshotInterval !== undefined && settings.screenshotInterval !== null) {
+        stmt.run(['screenshotInterval', settings.screenshotInterval.toString()]);
+      }
+
+      if (settings.voiceEnabled !== undefined && settings.voiceEnabled !== null) {
+        stmt.run(['voiceEnabled', settings.voiceEnabled ? 'true' : 'false']);
+      }
+
+      if (settings.voiceVolume !== undefined && settings.voiceVolume !== null) {
+        stmt.run(['voiceVolume', settings.voiceVolume.toString()]);
+      }
+
+      if (settings.debugLogs !== undefined && settings.debugLogs !== null) {
+        stmt.run(['debugLogs', settings.debugLogs ? 'true' : 'false']);
+      }
+
+      if (settings.consecutiveDistractionsLimit !== undefined && settings.consecutiveDistractionsLimit !== null) {
+        stmt.run(['consecutiveDistractionsLimit', settings.consecutiveDistractionsLimit.toString()]);
+      }
+    } finally {
+      stmt.free();
+    }
     this.save();
   }
 
   // General
   public clearLogs() {
-    this.db.run('DELETE FROM distractions');
-    this.db.run('DELETE FROM sessions');
+    this.db!.run('DELETE FROM distractions');
+    this.db!.run('DELETE FROM sessions');
     this.save();
   }
 }
