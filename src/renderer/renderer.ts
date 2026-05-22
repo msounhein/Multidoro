@@ -14,6 +14,7 @@ interface AppSettings {
   voiceEnabled: boolean;
   voiceVolume: number;
   debugLogs: boolean;
+  consecutiveDistractionsLimit: number;
 }
 
 interface PomodoroSession {
@@ -412,6 +413,7 @@ const intervalInput = document.getElementById('setting-scan-interval') as HTMLIn
 const voiceEnabledChk = document.getElementById('setting-voice-enabled') as HTMLInputElement;
 const saveBtn = document.getElementById('btn-save-settings') as HTMLButtonElement;
 const settingsStatusMsg = document.getElementById('settings-status-msg') as HTMLSpanElement;
+const consecutiveDistractionsInput = document.getElementById('setting-consecutive-distractions') as HTMLInputElement;
 
 visibilityBtn.addEventListener('click', () => {
   apiInput.type = apiInput.type === 'password' ? 'text' : 'password';
@@ -443,6 +445,7 @@ async function loadSettingsData() {
   apiInput.value = settings.apiKey || '';
   intervalInput.value = (settings.screenshotInterval || 5).toString();
   voiceEnabledChk.checked = settings.voiceEnabled !== false;
+  consecutiveDistractionsInput.value = (settings.consecutiveDistractionsLimit || 1).toString();
   
   const volRange = document.getElementById('setting-voice-volume') as HTMLInputElement;
   if (volRange) volRange.value = (settings.voiceVolume ?? 0.8).toString();
@@ -462,7 +465,8 @@ saveBtn.addEventListener('click', async () => {
     screenshotInterval: parseInt(intervalInput.value, 10) || 5,
     voiceEnabled: voiceEnabledChk.checked,
     voiceVolume: volRange ? parseFloat(volRange.value) : 0.8,
-    debugLogs: debugLogsChk ? debugLogsChk.checked : false
+    debugLogs: debugLogsChk ? debugLogsChk.checked : false,
+    consecutiveDistractionsLimit: parseInt(consecutiveDistractionsInput.value, 10) || 1
   };
   
   await (window as any).electronAPI.saveSettings(updatedSettings);
