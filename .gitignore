@@ -3,6 +3,7 @@ node_modules/
 
 # Compilation output
 dist/
+dist-release/
 
 # Local configuration & environment variables
 .env

@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc && node scripts/copy-assets.js",
     "watch": "tsc -w",
-    "start": "electron ."
+    "start": "electron .",
+    "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "@google/genai": "^1.1.0",
@@ -18,7 +19,27 @@
     "@types/node": "^20.12.12",
     "@types/sql.js": "^1.4.9",
     "electron": "^30.0.6",
+    "electron-builder": "^24.13.3",
     "tsx": "^4.10.5",
     "typescript": "^5.4.5"
+  },
+  "build": {
+    "appId": "com.multidoro.app",
+    "productName": "Multidoro",
+    "directories": {
+      "output": "dist-release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ],
+      "icon": "src/renderer/assets/icon.ico"
+    }
   }
 }
