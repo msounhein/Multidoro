@@ -2,6 +2,12 @@
 
 Multidoro is a state-of-the-art, glassmorphic desktop Pomodoro application built with **Electron, TypeScript, and HTML5/Vanilla CSS**. It integrates stateless **Gemini HTTP APIs** to act as a real-time visual work coach—monitoring your active screen and speaking warnings out loud if you get distracted from your declared task.
 
+<p align="left">
+  <a href="https://github.com/msounhein/Multidoro/releases">
+    <img src="https://img.shields.io/badge/Download-Beta%20Release-brightgreen?style=for-the-badge&logo=github" alt="Download Beta Release">
+  </a>
+</p>
+
 ---
 
 ## 📸 Screenshots
@@ -38,13 +44,20 @@ Multidoro is a state-of-the-art, glassmorphic desktop Pomodoro application built
 
 ---
 
-## 🚀 Installation & Setup
+## 🚀 Download & Installation
 
-### Prerequisites
+### 💾 Standalone Releases (Windows)
+For non-developers or quick setups, download the pre-compiled executables from the [GitHub Releases](https://github.com/msounhein/Multidoro/releases) page:
+* **Portable Version (`Multidoro.1.0.0.exe`)**: Runs instantly without installation.
+* **Installer Version (`Multidoro.Setup.1.0.0.exe`)**: Installs the app to your system, adding it to your desktop and Start Menu.
+
+### 🛠️ Developer Setup & Installation (From Source)
+
+#### Prerequisites
 - [Node.js](https://nodejs.org/) (v16+)
 - A **Gemini API Key** (obtainable from Google AI Studio)
 
-### 1. Clone & Install
+#### 1. Clone & Install
 ```bash
 # Clone the repository
 git clone https://github.com/msounhein/Multidoro.git
@@ -54,10 +67,10 @@ cd multidoro
 npm install
 ```
 
-### 2. Configure API Key
+#### 2. Configure API Key
 Launch the application and paste your API key directly inside the **Settings** tab. The key will be encrypted and saved securely locally.
 
-### 3. Build & Start
+#### 3. Build & Start
 ```bash
 # Compile TypeScript and copy asset files
 npm run build
