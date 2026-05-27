@@ -1,31 +1,39 @@
 # 🍅 Multidoro
 
-Multidoro is a state-of-the-art, glassmorphic desktop Pomodoro application built with **Electron, TypeScript, and HTML5/Vanilla CSS**. It integrates the **Gemini Live API** to act as a real-time visual work coach—monitoring your active screen and speaking warnings out loud if you get distracted from your declared task.
+Multidoro is a state-of-the-art, glassmorphic desktop Pomodoro application built with **Electron, TypeScript, and HTML5/Vanilla CSS**. It integrates stateless **Gemini HTTP APIs** to act as a real-time visual work coach—monitoring your active screen and speaking warnings out loud if you get distracted from your declared task.
+
+---
+
+## 📸 Screenshots
+
+| Main Dashboard | Analytics Logs & Settings |
+|---|---|
+| ![Main Dashboard](screenshots/MainInterface.png) | ![Analytics Logs & Settings](screenshots/Analyitics.png) |
 
 ---
 
 ## ✨ Features
 
-- **🧠 Real-Time AI Coaching**: Uses Gemini Live (via WebSockets) to analyze screenshots of your active screen against your declared task.
-- **🔊 Voice Feedback**: Gemini speaks verbal warnings, scoldings, and encouragement directly to you via low-latency PCM audio stream playback.
+- **🧠 Real-Time AI Coaching**: Uses stateless Gemini APIs (**Gemini 3.5 Flash** or **Gemini 3.1 Pro**) to analyze screenshots of your active screen against your declared task under a structured JSON schema.
+- **🔊 Voice Feedback**: Generates on-demand verbal scoldings (via **Gemini 3.1 Flash TTS**) using multiple selectable voices (`Zephyr`, `Puck`, `Aoede`, etc.) to keep you strictly on-task.
 - **🎙️ Speech-to-Text Task Input**: Dictate your current task hands-free using built-in speech recognition.
 - **⏱️ Flexible Pomodoro Techniques**:
   - *Traditional*: 25m focus / 5m break.
   - *Ultradian*: 50m focus / 10m break (ideal for deep work).
   - *Animedoro*: 60m focus / 20m break.
   - *Custom*: Configure your own focus and break durations.
-- **🖥️ Smart HUD Overlay**: A floating, always-on-top overlay widget automatically positioned in the bottom-right corner of your primary screen (safely above the taskbar) displaying your remaining time and task focus indicator.
-- **📊 Focus & Distraction Analytics**: View historical session logs, completed Pomodoro intervals, and tracked distraction events stored in a local offline database.
-- **🎨 Premium Dark Glassmorphic UI**: Beautiful responsive layout with glowing neon color-coded indicators (red for focus, green for breaks), custom glossy scrollbars, and dynamic inline vector SVG icons.
-- **🔌 Offline Resiliency**: Detects server-initiated `goAway` signals and automatically reconnects in under a second; schedules a 3-second self-healing loop for unexpected connection dropouts.
+- **🖥️ Smart HUD Overlay**: A floating, always-on-top overlay widget automatically positioned in the bottom-right corner of your screen (safely above the taskbar) displaying remaining time and distraction state.
+- **📊 Offline SQLite Database**: Uses a WebAssembly-based SQLite database (`sql.js`) to persist session logs, completion rates, and distraction events locally.
+- **🔒 Encrypted API Credentials**: Encrypts your Gemini API key at rest using Electron's native `safeStorage` API.
+- **🎨 Premium Dark Glassmorphic UI**: Beautiful responsive layout with glowing neon indicators, custom glossy scrollbars, and dynamic inline vector SVG icons.
 
 ---
 
 ## 🛠️ Architecture
 
-- **Main Process (`src/main.ts`)**: Controls window lifecycles, global tray setup, screen captures, native Windows balloon notifications, offline settings storage, and WebSocket communication with the Gemini Live API.
-- **Renderer Process (`src/renderer/renderer.ts`)**: Handles DOM actions, tab navigation, timer counting state, speech recognition, audio node buffering, and rendering analytics charts.
-- **Database Layer (`src/database.ts`)**: Stores sessions locally using SQLite/json structures to persist focus histories offline.
+- **Main Process (`src/main.ts`)**: Controls window lifecycles, global tray setup, screen captures, native Windows balloon notifications, encrypted offline settings storage, and stateless API calls to Gemini.
+- **Renderer Process (`src/renderer/renderer.ts`)**: Handles DOM actions, tab navigation, timer counting state, speech recognition, audio playback of on-demand TTS audio chunks, and rendering analytics charts.
+- **Database Layer (`src/database.ts`)**: Initializes tables for settings, sessions, and distractions offline in SQLite WASM and runs automated migrations.
 - **Preload Script (`src/preload.ts`)**: Exposes IPC channels securely between the Electron main process and the front-end renderer.
 
 ---
@@ -39,19 +47,15 @@ Multidoro is a state-of-the-art, glassmorphic desktop Pomodoro application built
 ### 1. Clone & Install
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/multidoro.git
+git clone https://github.com/msounhein/Multidoro.git
 cd multidoro
 
 # Install dependencies
 npm install
 ```
 
-### 2. Configure Environment
-Copy `.env.example` to `.env` in the root folder:
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-```
-*(Alternatively, you can paste your API key directly inside the Settings tab of the running app).*
+### 2. Configure API Key
+Launch the application and paste your API key directly inside the **Settings** tab. The key will be encrypted and saved securely locally.
 
 ### 3. Build & Start
 ```bash
@@ -66,7 +70,7 @@ npm start
 
 ## ⌨️ Development Commands
 
-- `npm run build`: Compiles TS code and copies static renderer assets (HTML, CSS, templates) to the `dist/` build output directory.
+- `npm run build`: Compiles TS code and copies static renderer assets (HTML, CSS, templates, and WASM binary) to the `dist/` build output directory.
 - `npm start`: Launches the compiled Electron binary.
 - `npm run dev`: Optional watch script for compiling code during active development.
 
