@@ -12,9 +12,9 @@ Multidoro is a state-of-the-art, glassmorphic desktop Pomodoro application built
 
 ## 📸 Screenshots
 
-| Main Dashboard | Analytics Logs & Settings |
-|---|---|
-| ![Main Dashboard](screenshots/MainInterface.png) | ![Analytics Logs & Settings](screenshots/Analytics.png) |
+| Main Dashboard | Analytics Logs & Settings | System Tray Menu |
+|---|---|---|
+| ![Main Dashboard](screenshots/MainInterface.png) | ![Analytics Logs & Settings](screenshots/Analytics.png) | ![System Tray Menu](screenshots/SystemTray.png) |
 
 ---
 
