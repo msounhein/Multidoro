@@ -944,7 +944,8 @@ body {
 
 .table-container {
   overflow-y: auto;
-  max-height: 250px;
+  flex-grow: 1;
+  min-height: 0;
   border: 1px solid var(--panel-border);
   border-radius: 12px;
   background: rgba(0,0,0,0.15);
