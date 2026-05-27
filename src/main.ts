@@ -782,10 +782,12 @@ function setupIpcListeners() {
 }
 
 // App lifecycle
+app.name = 'Multidoro';
+
 app.whenReady().then(async () => {
   // Set App User Model ID for Windows Toast Notifications to work
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.multidoro.app');
+    app.setAppUserModelId('Multidoro');
   }
   
   await initStorage();
